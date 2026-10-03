@@ -3,11 +3,54 @@ import re
 from core.llm import chat
 from core.prompts import EVIDENCE_PROMPT
 
+MAX_EVIDENCE_ITEMS = 10
+MAX_TEXT_CHARS = 420
+
 def _normalize_price(value):
     if value is None:
         return None
     digits = re.sub(r"\D", "", str(value))
     return int(digits) if digits else None
+
+def _compact_evidence(evidence):
+    compact = []
+    seen = set()
+
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        specs = metadata.get("specs", {})
+        if not isinstance(specs, dict):
+            specs = {}
+
+        source = str(item.get("source", "Unknown"))
+        title = str(metadata.get("title") or source)
+        price = item.get("price", "not extracted")
+        text = str(item.get("text", ""))[:MAX_TEXT_CHARS]
+
+        key = (source, title, str(price))
+        if key in seen:
+            continue
+        seen.add(key)
+
+        compact.append({
+            "title": title[:120],
+            "source": source,
+            "source_type": item.get("source_type", "unknown"),
+            "price": str(price),
+            "specs": specs,
+            "evidence": text,
+        })
+
+        if len(compact) >= MAX_EVIDENCE_ITEMS:
+            break
+
+    return compact
 
 def _local_checks(evidence):
     notes = []
@@ -38,27 +81,19 @@ def _local_checks(evidence):
                 "Different retrieved records contain different prices; treat price as time-sensitive and verify before purchase."
             )
 
-    for item in evidence:
-        if item.get("source_type") == "live_web" and not item.get("price"):
-            gaps.append(
-                f"No price was extracted from the live record attributed to {item.get('source', 'the source')}."
-            )
-
     return notes, conflicts, gaps
 
 def verify_evidence(query, structured, evidence):
-    context = "\n\n".join(
-        f"[{i+1}] {e.get('text', '')}\nSource: {e.get('source', 'Unknown')}\n"
-        f"Type: {e.get('source_type', 'unknown')}\nPrice: {e.get('price', 'not extracted')}"
-        for i, e in enumerate(evidence)
-    )
-
+    compact = _compact_evidence(evidence)
     local_notes, local_conflicts, local_gaps = _local_checks(evidence)
+
+    context = json.dumps(compact, ensure_ascii=False)
 
     raw = chat(
         EVIDENCE_PROMPT,
-        f"Request: {query}\nStructured: {json.dumps(structured)}\n"
-        f"Evidence:\n{context or 'None'}"
+        f"Request: {query}\n"
+        f"Structured: {json.dumps(structured, ensure_ascii=False)}\n"
+        f"Evidence records:\n{context or 'None'}"
     )
 
     try:
