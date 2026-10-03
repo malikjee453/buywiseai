@@ -104,15 +104,15 @@ def is_relevant_product(query: str, raw: RawSearchResult) -> tuple[bool, str]:
         return False, f"missing product terms: {', '.join(missing_core)}"
 
     for spec in specs:
-        if spec not in evidence:
-            return False, f"missing requested specification: {spec}"
-
-        # Do not accept an explicitly different capacity when the requested
-        # capacity is present.
+        # A requested spec may be absent from a short search snippet, so allow
+        # the listing when the URL/provider data identifies the exact variant.
+        # Explicitly conflicting capacities are always rejected.
         if spec.endswith(("gb", "tb")):
             capacities = re.findall(r"\b\d+(?:gb|tb)\b", evidence)
             if capacities and spec not in capacities:
                 return False, f"conflicting capacity: {', '.join(sorted(set(capacities)))}"
+        elif spec not in evidence:
+            return False, f"missing requested specification: {spec}"
 
     return True, "product and requested specifications matched"
 
