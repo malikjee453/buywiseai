@@ -612,14 +612,16 @@ def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
 
 
 def _verified_detail_records(html, source, product_url, detail_text, limit=2):
-    """Return only exact-product-page structured price evidence.
+    """Extract price evidence from the exact product page only.
 
-    Generic page-text numbers are intentionally NOT treated as verified
-    prices. A product price must come from Product/Offer structured data on
-    the exact product page.
+    Structured Product/Offer data is preferred. If absent, accept a visible
+    PKR/Rs price only when it is tightly associated with the product title
+    near the top of the exact detail page. Ignore installment, tax, shipping,
+    discount, review, and similar-product amounts.
     """
     records = []
 
+    # 1) Strongest evidence: Product/Offer JSON-LD.
     for record in _jsonld_product_records(html, source, product_url):
         metadata = record.get("metadata", {})
         metadata["url"] = product_url
@@ -627,22 +629,77 @@ def _verified_detail_records(html, source, product_url, detail_text, limit=2):
         record["metadata"] = metadata
         records.append(record)
         if len(records) >= limit:
-            break
+            return records[:limit]
 
-    unique = []
-    seen = set()
-    for record in records:
-        key = (
-            str(record.get("metadata", {}).get("url", "")),
-            str(record.get("price", "")),
-            str(record.get("metadata", {}).get("title", "")),
-        )
-        if key in seen:
+    # 2) Strict visible price fallback.
+    text = _clean(detail_text or "")
+    if not text:
+        return []
+
+    slug = product_url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+    slug_title = re.sub(r"[-_]+", " ", slug).strip()
+    slug_title = re.sub(r"\b(?:price|in|pakistan)\b", " ", slug_title, flags=re.I)
+    slug_title = _clean(slug_title)
+
+    title_match = re.search(re.escape(slug_title), text, re.I) if slug_title else None
+    title_pos = title_match.start() if title_match else 0
+
+    price_candidates = []
+    for match in re.finditer(r"(?:PKR|Rs\\.?)[\\s\\u00a0]*[0-9][0-9,]*(?:\\.\\d+)?", text, re.I):
+        value = _money(match.group(0))
+        if not value or value < 1000:
             continue
-        seen.add(key)
-        unique.append(record)
 
-    return unique[:limit]
+        distance = abs(match.start() - title_pos)
+        if distance > 1800:
+            continue
+
+        window = text[max(0, match.start()-260):min(len(text), match.end()+320)].lower()
+
+        reject_terms = (
+            "installment", "installments", "per month", "/month", "monthly",
+            "emi", "down payment", "advance payment", "deposit",
+            "pta tax", "tax:", "shipping", "delivery", "save rs",
+            "discount", "off rs", "similar mobile", "similar product",
+            "reviews", "review", "rating",
+        )
+        if any(term in window for term in reject_terms):
+            continue
+
+        score = 1000 - distance
+        if re.search(r"\\b(?:price|sale price|our price|current price|buy now)\\b", window, re.I):
+            score += 300
+        if match.start() >= title_pos:
+            score += 100
+        price_candidates.append((score, value, match))
+
+    if not price_candidates:
+        return []
+
+    price_candidates.sort(key=lambda item: (-item[0], item[1]))
+
+    for _, value, match in price_candidates[:limit]:
+        context = text[max(0, title_pos-120):min(len(text), match.end()+220)]
+        title = slug_title[:120] or _clean(context[:120])
+
+        record = validate_record({
+            "text": context[:900],
+            "source": source,
+            "source_type": "live_web",
+            "price": f"PKR {value:,}",
+            "metadata": {
+                "title": title,
+                "country": "Pakistan",
+                "currency": "PKR",
+                "url": product_url,
+                "specs": _extract_specs(text),
+                "price_source": "product_page_text",
+            },
+        })
+        if record:
+            records.append(record)
+
+    return records[:limit]
 
 def _search_source(source, config, query, budget, group):
     try:
