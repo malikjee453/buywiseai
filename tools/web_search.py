@@ -17,7 +17,7 @@ SOURCE_CATALOG = {
     "Daraz Pakistan": {"base": "https://www.daraz.pk", "search": "https://www.daraz.pk/catalog/?q={q}", "groups": {"electronics", "fashion", "grocery", "home", "general"}},
     "Markaz App": {"base": "https://www.markaz.app", "search": "https://www.markaz.app/shop?search={q}", "groups": {"electronics", "fashion", "grocery", "home", "general"}},
     "OLX Pakistan": {"base": "https://www.olx.com.pk", "search": "https://www.olx.com.pk/items/q-{q}", "groups": {"electronics", "home", "general"}},
-    "PriceOye": {"base": "https://priceoye.pk", "search": "https://priceoye.pk/mobiles", "groups": {"electronics"}},
+    "PriceOye": {"base": "https://priceoye.pk", "search": "https://priceoye.pk/mobile", "groups": {"electronics"}},
     "Telemart": {"base": "https://www.telemart.pk", "search": "https://www.telemart.pk/collections/smart-phones", "groups": {"electronics", "home", "general"}},
     "Shophive": {"base": "https://www.shophive.com", "search": "https://www.shophive.com/catalogsearch/result/?q={q}", "groups": {"electronics", "home", "general"}},
     "Mega.pk": {"base": "https://www.mega.pk", "search": "https://www.mega.pk/mobiles/", "groups": {"electronics"}},
@@ -184,6 +184,9 @@ def _is_product_url(source, url):
         if any(item in path for item in blocked):
             return False
         return bool(re.search(r"/mobiles/[^/]+$", path)) or bool(re.search(r"/[^/]+-price-in-pakistan$", path))
+    if source == "PriceOye":
+        # PriceOye product pages use /mobiles/<brand>/<product-slug>.
+        return bool(re.search(r"/mobiles/[^/]+/[^/]+$", path))
     if source == "Telemart":
         return "/products/" in path and path.count("/") >= 4
     if re.search(r"/(product|item|p|dp|products)/[^/]+", path, re.I):
