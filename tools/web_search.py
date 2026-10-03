@@ -76,8 +76,15 @@ def _clean(text):
     return " ".join(text.split())
 
 def _money(value):
-    digits = re.sub(r"\D", "", str(value))
-    return int(digits) if digits else None
+    """Convert retailer price values without multiplying decimal prices by 100."""
+    text = str(value or "").strip().replace(",", "")
+    match = re.search(r"\d+(?:\.\d+)?", text)
+    if not match:
+        return None
+    try:
+        return int(float(match.group(0)))
+    except (TypeError, ValueError):
+        return None
 
 def _budget_from_query(query):
     matches = re.findall(
