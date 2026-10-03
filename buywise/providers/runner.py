@@ -34,8 +34,8 @@ def _query_variants(query: str) -> list[str]:
     category_hint = f" {' '.join(categories)}" if categories else ""
     variants = [
         clean,
-        f'"{clean}" Pakistan price{category_hint}',
-        f'{clean} Pakistan buy online price{category_hint}',
+        f'{clean} Pakistan buy online{category_hint}',
+        f'{clean} Pakistan price{category_hint}',
     ]
     return list(dict.fromkeys(variants))
 
