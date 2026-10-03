@@ -129,7 +129,7 @@ def build_comparison(query, structured, evidence):
         seen.add(key)
         compact.append(record)
 
-        if len(compact) >= 6:
+        if len(compact) >= 15:
             break
 
     raw = chat(
