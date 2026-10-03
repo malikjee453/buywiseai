@@ -23,10 +23,10 @@ class MarketplaceProvider(SearchProvider):
         query: str,
         max_results: int,
     ) -> list[RawSearchResult]:
-        search_query = (
-            f'site:{domain} "{query}" '
-            f'("Rs" OR "PKR" OR "price") Pakistan'
-        )
+        # Do not require price words in the search query. Many stores expose
+        # the price only in structured metadata/snippets, while their indexed
+        # page title contains the product terms.
+        search_query = f'site:{domain} {query} Pakistan'
 
         with DDGS(timeout=15) as ddgs:
             items = ddgs.text(
@@ -56,7 +56,7 @@ class MarketplaceProvider(SearchProvider):
         results: list[RawSearchResult] = []
 
         with ThreadPoolExecutor(
-            max_workers=min(12, len(platforms)),
+            max_workers=min(8, len(platforms)),
             thread_name_prefix="buywise-platform",
         ) as pool:
             futures = {
