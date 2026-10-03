@@ -928,11 +928,23 @@ def _search_source_with_fallback(source, config, query, budget, group):
 def search_web(query, category=""):
     """Search shopping sources in fast priority passes and return live evidence.
 
-    Pass 1 focuses on Pakistan's main shopping platforms. Secondary and
-    international sources are only queried when the primary pass does not
-    produce enough useful records. This keeps common Pakistan searches fast
-    while still giving BuyWiseAI broad coverage when needed.
+    Tool/agent frameworks can occasionally pass a one-item list instead of a
+    string. Normalize those inputs here so a malformed tool argument cannot
+    crash the entire research workflow.
     """
+    if isinstance(query, (list, tuple)):
+        query = " ".join(str(item).strip() for item in query if item is not None).strip()
+    elif query is None:
+        query = ""
+    else:
+        query = str(query).strip()
+
+    if isinstance(category, (list, tuple)):
+        category = " ".join(str(item).strip() for item in category if item is not None).strip()
+    elif category is None:
+        category = ""
+    else:
+        category = str(category).strip()
     budget = _budget_from_query(query)
     group = _query_group(query)
     category_key = str(category or "").strip().lower().rstrip("s")
