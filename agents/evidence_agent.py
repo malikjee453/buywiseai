@@ -126,6 +126,14 @@ def verify_evidence(query, structured, evidence):
         return cleaned
 
     result["notes"] = _clean_messages(result["notes"] + local_notes)
+
+    # Remove common recommendation/ranking language from evidence notes so
+    # the final response cannot accidentally present it as a verified fact.
+    blocked = ("best", "strongest", "stronger choice", "better choice", "recommend")
+    result["notes"] = [
+        note for note in result["notes"]
+        if not any(word in note.lower() for word in blocked)
+    ]
     result["conflicts"] = _clean_messages(result["conflicts"] + local_conflicts)
     result["gaps"] = _clean_messages(result["gaps"] + local_gaps)
 
