@@ -862,26 +862,9 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
             if len(results) >= limit:
                 break
 
-    # If an exact product page blocks automated fetching, retain the product
-    # when the retailer catalog itself exposes its exact URL and price.
-    # Validation labels this evidence as partial rather than fully verified.
-    if len(results) < limit and html:
-        listing_records = catalog_records
-        existing_urls = {
-            str(item.get("metadata", {}).get("url", ""))
-            for item in results
-        }
-        for record in listing_records:
-            product_url = str(record.get("metadata", {}).get("url", ""))
-            if product_url in existing_urls:
-                continue
-            record["metadata"]["price_source"] = "listing_page_text"
-            record["metadata"]["listing_verified"] = True
-            results.append(record)
-            existing_urls.add(product_url)
-            if len(results) >= limit:
-                break
-
+    # Strict verification: never promote a listing/search-page price into the
+    # comparison results. If the exact product page cannot be verified, reject
+    # it instead of returning a misleading "partially verified" price.
     return results[:limit]
 
 def _search_source_with_fallback(source, config, query, budget, group):
