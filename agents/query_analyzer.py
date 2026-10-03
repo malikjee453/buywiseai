@@ -16,7 +16,7 @@ def _fallback_analysis(query, category="", budget="", language="English"):
             detected_category = "Laptop"
         elif any(term in q for term in ("fridge", "refrigerator", "washing machine", "microwave", "air conditioner")):
             detected_category = "Appliance"
-        elif any(term in q for term in ("shirt", "dress", "kurta", "lawn", "shoe", "sandal")):
+        elif any(term in q for term in ("shirt", "dress", "kurta", "lawn", "skirt", "skirts", "shoe", "sandal")):
             detected_category = "Fashion"
         else:
             detected_category = "Electronics"
