@@ -604,7 +604,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
 
     listing_url = config["search"]
     if source == "Daraz Pakistan":
-        listing_url = "https://www.daraz.pk/tag/moblie-phone-infinix/"
+        listing_url = config["search"].format(q=quote_plus(query))
     try:
         html = _fetch(listing_url, timeout=5)
     except Exception:
