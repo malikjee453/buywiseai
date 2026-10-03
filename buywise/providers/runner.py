@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from buywise.schemas import ProductListing, RawSearchResult
+from buywise.categories import detect_categories
 from .base import SearchProvider
 from .brave import BraveProvider
 from .common import is_relevant_product, normalize_url, raw_to_listing
@@ -29,10 +30,12 @@ MAX_SEARCH_ROUNDS = 3
 
 def _query_variants(query: str) -> list[str]:
     clean = " ".join(query.split())
+    categories = detect_categories(clean)
+    category_hint = f" {' '.join(categories)}" if categories else ""
     variants = [
         clean,
-        f'"{clean}" Pakistan price',
-        f'{clean} Pakistan buy online price',
+        f'"{clean}" Pakistan price{category_hint}',
+        f'{clean} Pakistan buy online price{category_hint}',
     ]
     return list(dict.fromkeys(variants))
 
