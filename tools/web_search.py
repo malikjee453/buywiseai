@@ -414,7 +414,7 @@ def _price_contexts(html, source, page_url, limit=12):
     matches = []
 
     for match in re.finditer(
-        r"(?:Rs\\.?|PKR|\\$)\\s*[0-9][0-9,]*(?:\\.\\d+)?",
+        r"(?:Rs\.?|PKR|\$)\s*[0-9][0-9,]*(?:\.\d+)?",
         text,
         re.I,
     ):
@@ -429,7 +429,6 @@ def _price_contexts(html, source, page_url, limit=12):
         window = context.lower()
         score = 0
 
-        # Real product-price labels are strong signals.
         for token in (
             "latest price", "current price", "our price", "sale price",
             "price in pakistan", "price:", "price ", "buy now",
@@ -437,7 +436,6 @@ def _price_contexts(html, source, page_url, limit=12):
             if token in window:
                 score += 4
 
-        # Payment-plan amounts are not the product price.
         for token in (
             "per month", "/month", "monthly", "installment", "installments",
             "emi", "down payment", "advance payment", "deposit",
@@ -445,19 +443,14 @@ def _price_contexts(html, source, page_url, limit=12):
             if token in window:
                 score -= 12
 
-        # Prefer prices that appear close to an explicit price label.
         label_match = re.search(
-            r"(?:latest|current|our|sale)?\\s*price(?:\\s+in\\s+pakistan)?\\s*[:\\-]?\\s*(?:rs\\.?|pkr)?\\s*[0-9]",
+            r"(?:latest|current|our|sale)?\s*price(?:\s+in\s+pakistan)?\s*[:\-]?\s*(?:rs\.?|pkr)?\s*[0-9]",
             window,
             re.I,
         )
         if label_match:
             score += 8
 
-        # A product price in this app's shopping domain should not be an
-        # implausibly tiny payment amount. Keep legitimate low-cost phones,
-        # but strongly deprioritize sub-PKR-10k values when better candidates
-        # exist on the same page.
         if value < 10000:
             score -= 2
 
@@ -479,6 +472,7 @@ def _price_contexts(html, source, page_url, limit=12):
             break
 
     return results
+
 
 def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
     """Extract product-card evidence from listing HTML.
