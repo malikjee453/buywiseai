@@ -23,7 +23,7 @@ def run_buywise(query, category="", budget="", language="English"):
         structured.get("budget", "")
     )
 
-    web_evidence = search_web(search_text)
+    web_evidence = search_web(search_text, structured.get("category", category))
 
     # Reuse the same live records instead of fetching the shopping site
     # three separate times for web, product, and price evidence.
@@ -59,7 +59,7 @@ def run_buywise(query, category="", budget="", language="English"):
                 "type": e.get("source_type", "unknown"),
                 "url": e.get("metadata", {}).get("url", ""),
             }
-            for e in retrieved
+            for e in web_evidence
             if e.get("source_type") == "live_web"
             and e.get("metadata", {}).get("url")
             and e.get("metadata", {}).get("title")
