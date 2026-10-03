@@ -51,7 +51,7 @@ Strict grounding rules:
 - Never say that a camera resolution indicates better image quality. Report the
   supplied megapixel value without inferring camera quality.
 - Include evidence_status as "supported", "partial", or "insufficient".
-- Return only JSON. No explanation outside the JSON.
+- Source and source_url must exactly match supplied evidence. Never invent or modify URLs.\n- Return only JSON. No explanation outside the JSON.
 
 Return valid JSON only:
 {
@@ -69,7 +69,9 @@ Return valid JSON only:
       "strengths": ["..."],
       "tradeoffs": ["..."],
       "requirement_fit": ["..."],
-      "evidence_status": "supported|partial|insufficient"
+      "evidence_status": "supported|partial|insufficient",
+      "source": "exact source name from evidence",
+      "source_url": "exact URL from evidence"
     }
   ]
 }
