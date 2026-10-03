@@ -4,35 +4,55 @@ from agents.comparison_agent import build_comparison
 from agents.response_agent import generate_response
 from rag.retriever import retrieve
 from tools.web_search import search_web
-from tools.product_search import search_products
-from tools.price_search import search_prices
+
+
+def _safe_text(value):
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _safe_requirements(value):
+    if not isinstance(value, list):
+        return []
+    return [
+        str(item).strip()
+        for item in value
+        if item is not None and str(item).strip()
+    ]
+
 
 def run_buywise(query, category="", budget="", language="English"):
     structured = analyze_query(query, category, budget, language)
 
-    search_text = " ".join([
-        query,
-        structured.get("category", ""),
-        structured.get("use_case", ""),
-        " ".join(structured.get("requirements", []))
-    ])
+    if not isinstance(structured, dict):
+        structured = {}
+
+    structured["category"] = _safe_text(structured.get("category")) or _safe_text(category)
+    structured["budget"] = _safe_text(structured.get("budget")) or _safe_text(budget)
+    structured["use_case"] = _safe_text(structured.get("use_case"))
+    structured["requirements"] = _safe_requirements(
+        structured.get("requirements")
+    )
+
+    search_parts = [
+        _safe_text(query),
+        structured["category"],
+        structured["use_case"],
+        " ".join(structured["requirements"]),
+    ]
+    search_text = " ".join(part for part in search_parts if part)
 
     local_evidence = retrieve(
         search_text,
-        structured.get("category", ""),
-        structured.get("budget", "")
+        structured["category"],
+        structured["budget"],
     )
 
-    web_evidence = search_web(search_text, structured.get("category", category))
-
-    # Reuse the same live records instead of fetching the shopping site
-    # three separate times for web, product, and price evidence.
-    product_evidence = web_evidence
-    price_evidence = [
-        item for item in web_evidence
-        if item.get("price")
-        and item.get("metadata", {}).get("currency") == "PKR"
-    ]
+    web_evidence = search_web(
+        search_text,
+        structured["category"] or category,
+    )
 
     # Keep useful local RAG guidance, but never expose fictional demo records
     # as evidence for real shopping research.
