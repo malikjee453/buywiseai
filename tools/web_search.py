@@ -593,60 +593,79 @@ def _search_engine_candidates(source, config, query):
     return candidates
 
 def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
-    """Use retailer catalog pages as a second discovery path.
-
-    This is intentionally separate from generic scraping because some
-    Pakistani retailers expose product cards in server-rendered catalog HTML
-    even when their search endpoint is JavaScript-heavy.
-    """
-    if source not in {"Mega.pk", "Daraz Pakistan"}:
+    """Discover product URLs from retailer HTML, including embedded page data."""
+    if source not in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
         return []
 
     listing_url = config["search"]
     if source == "Daraz Pakistan":
         listing_url = config["search"].format(q=quote_plus(query))
+
     try:
         html = _fetch(listing_url, timeout=5)
     except Exception:
         return []
 
-    parser = _LinkParser()
-    parser.feed(html)
     candidates = []
     seen = set()
 
-    for href, anchor in parser.links:
-        absolute = urljoin(listing_url, href)
-        if absolute in seen or not _is_product_url(source, absolute):
-            continue
-        anchor = _clean(anchor)
-        if not anchor or not PRODUCT_WORDS.search(anchor + " " + absolute):
-            continue
+    def consider(raw_url, anchor=""):
+        absolute = urljoin(listing_url, unquote(raw_url))
+        canonical = absolute.split("?", 1)[0].rstrip("/")
+        if canonical in seen or not _is_product_url(source, canonical):
+            return
+        if not PRODUCT_WORDS.search(anchor + " " + canonical):
+            return
 
-        # Daraz tag/catalog pages can contain several variants of the same
-        # product. Prefer the canonical product URL without tracking params.
-        canonical = absolute.split("?", 1)[0]
-        if canonical in seen:
-            continue
-        seen.add(canonical)
-
-        # Nearby page text often contains the exact current PKR price.
-        position = html.find(href)
-        if position < 0:
-            position = html.find(canonical)
-        context = anchor
-        if position >= 0:
-            context += " " + html[max(0, position - 350):position + 1400]
+        # Pull a generous window around the URL. Retailer pages frequently
+        # keep title/price/specs in JSON or script data beside the URL.
+        pos = html.find(raw_url)
+        if pos < 0:
+            pos = html.find(canonical)
+        context = _clean(anchor)
+        if pos >= 0:
+            context = _clean(
+                context + " " + html[max(0, pos - 900):pos + 2200]
+            )
 
         record = _record_from_context(context, source, canonical)
-        if record:
-            price = _money(record.get("price"))
-            if budget and price and price > budget:
-                continue
-            record["metadata"]["title"] = anchor[:120]
-            candidates.append(record)
-            if len(candidates) >= limit:
-                break
+        if not record:
+            return
+
+        price = _money(record.get("price"))
+        if budget and price and price > budget:
+            return
+
+        record["metadata"]["title"] = (
+            _clean(anchor)[:120]
+            or canonical.rsplit("/", 1)[-1][:120]
+        )
+        seen.add(canonical)
+        candidates.append(record)
+
+    # Normal anchors.
+    parser = _LinkParser()
+    parser.feed(html)
+    for href, anchor in parser.links:
+        consider(href, anchor)
+        if len(candidates) >= limit:
+            return candidates
+
+    # Embedded absolute URLs in JSON/JS.
+    host = config["base"].split("//", 1)[-1].replace("www.", "")
+    if source == "Daraz Pakistan":
+        pattern = rf'https?://(?:www\.)?{re.escape(host)}/products/[^\s"<>\\]+-i\d+\.html'
+    elif source == "Mega.pk":
+        pattern = rf'https?://(?:www\.)?{re.escape(host)}/mobiles/[^\s"<>\\]+'
+    elif source == "Shophive":
+        pattern = rf'https?://(?:www\.)?{re.escape(host)}/[^\s"<>\\]+'
+    else:
+        pattern = rf'https?://(?:www\.)?{re.escape(host)}/[^\s"<>\\]+'
+
+    for raw_url in re.findall(pattern, html, re.I):
+        consider(raw_url)
+        if len(candidates) >= limit:
+            break
 
     return candidates
 
