@@ -31,13 +31,21 @@ class MarketplaceProvider(SearchProvider):
         search_query = f"site:{domain} {query} price"
 
         try:
-            with DDGS(timeout=3) as ddgs:
-                items = ddgs.text(
-                    search_query,
-                    region="pk-en",
-                    backend="auto",
-                    max_results=min(max_results, 3),
-                )
+            items = []
+            # Try the default backend first, then Bing as a fallback.
+            for backend in ("auto", "bing"):
+                try:
+                    with DDGS(timeout=5) as ddgs:
+                        items = ddgs.text(
+                            search_query,
+                            region="pk-en",
+                            backend=backend,
+                            max_results=min(max_results, 3),
+                        )
+                    if items:
+                        break
+                except Exception:
+                    continue
 
             if not items:
                 return []
