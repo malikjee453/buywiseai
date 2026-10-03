@@ -204,9 +204,19 @@ def _search_source(source, config, query, budget, group):
         for product_url, anchor in candidates[:10]:
             try:
                 detail_html = _fetch(product_url, timeout=6)
+
+                # Parse the entire product page for specifications. Price snippets
+                # are intentionally short, but specs such as battery/camera often
+                # appear elsewhere on the same detail page.
+                detail_parser = _TextParser()
+                detail_parser.feed(detail_html)
+                detail_text = _clean(" ".join(detail_parser.parts))
+
                 detail = _price_contexts(detail_html, source, product_url, limit=1)
                 if detail:
                     detail[0]["metadata"]["title"] = anchor[:120]
+                    detail[0]["metadata"]["specs"] = _extract_specs(detail_text)
+                    detail[0]["text"] = detail_text[:1600]
                     results.extend(detail)
             except Exception:
                 continue
@@ -266,9 +276,16 @@ def _search_source_with_fallback(source, config, query, budget, group):
     for product_url, anchor in _search_engine_candidates(source, config, query):
         try:
             detail_html = _fetch(product_url, timeout=7)
+
+            detail_parser = _TextParser()
+            detail_parser.feed(detail_html)
+            detail_text = _clean(" ".join(detail_parser.parts))
+
             detail = _price_contexts(detail_html, source, product_url, limit=1)
             if detail:
                 detail[0]["metadata"]["title"] = anchor[:120]
+                detail[0]["metadata"]["specs"] = _extract_specs(detail_text)
+                detail[0]["text"] = detail_text[:1600]
                 results.extend(detail)
         except Exception:
             continue
