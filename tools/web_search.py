@@ -760,7 +760,7 @@ def _search_engine_candidates(source, config, query):
                 if len(candidates) >= 12:
                     return candidates
 
-            pattern = rf"https?://(?:www\\.)?{re.escape(host)}[^\\s\\"'<>]+"
+            pattern = r"https?://(?:www\\.)?" + re.escape(host) + r"[^\s\"'<>]+"
             for raw_url in re.findall(pattern, page, re.I):
                 add_url(raw_url)
                 if len(candidates) >= 12:
