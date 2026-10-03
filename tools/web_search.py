@@ -28,6 +28,34 @@ SOURCE_CATALOG = {
     "Junaid Jamshed (J.)": {"base": "https://www.junaidjamshed.com", "search": "https://www.junaidjamshed.com/catalogsearch/result/?q={q}", "groups": {"fashion", "general"}},
 }
 
+# Search Pakistani shopping sources first. These are the core sources for
+# local price comparison; secondary sources are queried only when the first
+# pass does not return enough useful evidence.
+PRIMARY_PK_SOURCES = (
+    "Daraz Pakistan",
+    "PriceOye",
+    "Telemart",
+    "Shophive",
+    "Mega.pk",
+    "iShopping",
+)
+
+SECONDARY_PK_SOURCES = (
+    "HomeShopping",
+    "Galaxy",
+    "Naheed",
+    "OLX Pakistan",
+    "Markaz App",
+    "Sapphire",
+    "Khaadi",
+    "Junaid Jamshed (J.)",
+)
+
+INTERNATIONAL_SOURCES = (
+    "AliExpress",
+    "Temu",
+)
+
 PRODUCT_WORDS = re.compile(
     r"(iphone|galaxy|redmi|vivo|oppo|tecno|infinix|xiaomi|realme|motorola|honor|"
     r"oneplus|pixel|itel|nokia|dcode|sparx|xmobile|phone|mobile|laptop|tablet|"
@@ -554,7 +582,13 @@ def _search_source_with_fallback(source, config, query, budget, group):
     return results[:12]
 
 def search_web(query, category=""):
-    """Search supported shopping sources and return only retrieved live evidence."""
+    """Search shopping sources in fast priority passes and return live evidence.
+
+    Pass 1 focuses on Pakistan's main shopping platforms. Secondary and
+    international sources are only queried when the primary pass does not
+    produce enough useful records. This keeps common Pakistan searches fast
+    while still giving BuyWiseAI broad coverage when needed.
+    """
     budget = _budget_from_query(query)
     group = _query_group(query)
     category_key = str(category or "").strip().lower().rstrip("s")
@@ -562,21 +596,48 @@ def search_web(query, category=""):
     allowed_groups = SOURCE_GROUPS.get(category_name)
     if not allowed_groups:
         allowed_groups = {group}
-    selected = [
-        (name, cfg) for name, cfg in SOURCE_CATALOG.items()
-        if cfg["groups"] & allowed_groups
-    ]
 
-    results = []
-    # Give smaller retailers a chance to return evidence even when one
-    # large retailer is slow or blocks automated fetches.
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {
-            pool.submit(_search_source_with_fallback, name, cfg, query, budget, group): name
-            for name, cfg in selected
-        }
-        for future in as_completed(futures):
-            results.extend(future.result())
+    def eligible(names):
+        return [
+            (name, SOURCE_CATALOG[name])
+            for name in names
+            if name in SOURCE_CATALOG
+            and SOURCE_CATALOG[name]["groups"] & allowed_groups
+        ]
+
+    def run_pass(selected, workers=6):
+        found = []
+        if not selected:
+            return found
+        with ThreadPoolExecutor(max_workers=min(workers, len(selected))) as pool:
+            futures = {
+                pool.submit(_search_source_with_fallback, name, cfg, query, budget, group): name
+                for name, cfg in selected
+            }
+            for future in as_completed(futures):
+                try:
+                    found.extend(future.result())
+                except Exception:
+                    continue
+        return found
+
+    # Pass 1: the six highest-priority Pakistani shopping sources.
+    results = run_pass(eligible(PRIMARY_PK_SOURCES), workers=6)
+
+    # If the primary pass produced too few products, broaden to other
+    # Pakistani stores before touching international marketplaces.
+    if len(results) < 8:
+        secondary = [
+            item for item in eligible(SECONDARY_PK_SOURCES)
+            if item[0] not in {str(r.get("source", "")) for r in results}
+        ]
+        results.extend(run_pass(secondary, workers=6))
+
+    # International sources are a final fallback. They are useful, but
+    # querying them on every Pakistan shopping request adds latency.
+    if len(results) < 8:
+        international = eligible(INTERNATIONAL_SOURCES)
+        results.extend(run_pass(international, workers=2))
 
     unique = []
     seen = set()
@@ -594,19 +655,32 @@ def search_web(query, category=""):
         seen.add(key)
         unique.append(item)
 
-    # Keep results diverse. Round-robin across sources first so a single
-    # retailer cannot consume the entire evidence set.
+    # Keep results diverse. Primary Pakistani stores get the first opportunity
+    # to appear, while round-robin prevents one retailer from taking over.
+    priority_order = {
+        name: index for index, name in enumerate(
+            PRIMARY_PK_SOURCES + SECONDARY_PK_SOURCES + INTERNATIONAL_SOURCES
+        )
+    }
     by_source = {}
     for item in unique:
         by_source.setdefault(item.get("source", "Unknown"), []).append(item)
+    for source_items in by_source.values():
+        source_items.sort(key=lambda item: priority_order.get(item.get("source", ""), 999))
 
     balanced = []
     max_per_source = 3
+    source_order = sorted(
+        by_source,
+        key=lambda source: priority_order.get(source, 999),
+    )
     for round_index in range(max_per_source):
-        for source, source_items in by_source.items():
+        for source in source_order:
+            source_items = by_source[source]
             if round_index < len(source_items):
                 balanced.append(source_items[round_index])
                 if len(balanced) >= 18:
                     return [validate_record(item) for item in balanced]
 
-    return balanced
+    return [validate_record(item) for item in balanced]
+
