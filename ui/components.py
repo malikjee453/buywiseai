@@ -55,6 +55,20 @@ def render_product_cards(products):
             if p.get("evidence_status"):
                 st.caption(f"Evidence: {p['evidence_status']}")
 
+            availability = p.get("availability", [])
+            if availability:
+                st.write("**Available at**")
+                for item in availability:
+                    source = item.get("source", "Source")
+                    url = item.get("url", "")
+                    if url:
+                        st.markdown(
+                            f'<a href="{url}" target="_blank" rel="noopener noreferrer">{source} → Open product/source</a>',
+                            unsafe_allow_html=True,
+                        )
+            else:
+                st.caption("Product link: not available in retrieved evidence.")
+
 def render_sources(sources):
     st.markdown("## Sources")
     seen = set()
