@@ -302,12 +302,23 @@ def _search_engine_candidates(source, config, query):
         return []
 
 def _search_source_with_fallback(source, config, query, budget, group):
+    # First use the retailer's own search page. Some retailers expose only a
+    # small subset or use client-side rendering, so supplement (rather than
+    # replace) those results with indexed product pages.
     results = _search_source(source, config, query, budget, group)
-    if results:
-        return results
 
-    results = []
+    if len(results) >= 3:
+        return results[:12]
+
+    existing_urls = {
+        str(item.get("metadata", {}).get("url", ""))
+        for item in results
+    }
+
     for product_url, anchor in _search_engine_candidates(source, config, query):
+        if product_url in existing_urls:
+            continue
+
         try:
             detail_html = _fetch(product_url, timeout=7)
 
@@ -320,25 +331,25 @@ def _search_source_with_fallback(source, config, query, budget, group):
                 detail[0]["metadata"]["title"] = anchor[:120]
                 detail[0]["metadata"]["specs"] = _extract_specs(detail_text)
                 detail[0]["text"] = detail_text[:1600]
-                results.extend(detail)
+                price = _money(detail[0].get("price"))
+
+                # A PKR budget can only be compared against a PKR price.
+                currency = detail[0].get("metadata", {}).get("currency")
+                if not (
+                    budget
+                    and currency == "PKR"
+                    and price
+                    and price > budget
+                ):
+                    results.extend(detail)
+                    existing_urls.add(product_url)
         except Exception:
             continue
+
         if len(results) >= 12:
             break
 
-    if not results:
-        return []
-
-    filtered = []
-    for record in results:
-        price = _money(record.get("price"))
-        # A PKR budget can only be compared against a PKR price. Never
-        # mislabel USD/other currencies as PKR.
-        if budget and record.get("metadata", {}).get("currency") == "PKR":
-            if price and price > budget:
-                continue
-        filtered.append(record)
-    return filtered[:12]
+    return results[:12]
 
 def search_web(query, category=""):
     """Search supported shopping sources and return only retrieved live evidence."""
@@ -386,7 +397,7 @@ def search_web(query, category=""):
     counts = {}
     for item in unique:
         source = item.get("source", "Unknown")
-        if counts.get(source, 0) >= 3:
+        if counts.get(source, 0) >= 4:
             continue
         counts[source] = counts.get(source, 0) + 1
         balanced.append(item)
