@@ -60,6 +60,8 @@ def run_buywise(query, category="", budget="", language="English"):
                 "url": e.get("metadata", {}).get("url", ""),
             }
             for e in retrieved
-            if e.get("source_type") != "demonstration"
+            if e.get("source_type") == "live_web"
+            and e.get("metadata", {}).get("url")
+            and e.get("metadata", {}).get("title")
         ],
     }
