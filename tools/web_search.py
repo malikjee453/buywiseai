@@ -411,6 +411,13 @@ def _jsonld_product_records(html, source, page_url):
 
 def _price_contexts(html, source, page_url, limit=12):
     """Extract the retailer's actual product price before generic page prices."""
+    # The exact product page is the only page allowed to provide a verified
+    # price. Prefer its structured Product/Offer data; generic page numbers
+    # (reviews, tax, shipping, discounts, etc.) must never win over it.
+    structured = _jsonld_product_records(html, source, page_url)
+    if structured:
+        return structured[:limit]
+
     parser = _TextParser()
     parser.feed(html)
     text = _clean(" ".join(parser.parts))
