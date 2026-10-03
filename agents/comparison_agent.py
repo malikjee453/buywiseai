@@ -19,7 +19,7 @@ def _display_name(metadata, source):
     if not title:
         return _clean(source, "Product")
 
-    title = re.sub(r"\\\\s+", " ", title).strip()
+    title = re.sub(r"\s+", " ", title).strip()
 
     # Remove common retailer snippet clutter while keeping the product name
     # exactly grounded in the retrieved title.
