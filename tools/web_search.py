@@ -729,7 +729,7 @@ def _search_engine_candidates(source, config, query):
     seen = set()
 
     def add_url(raw_url, anchor=""):
-        absolute = unquote(raw_url).replace("&amp;", "&").strip(" \\t\\r\\n'\\"<>(),")
+        absolute = unquote(raw_url).replace("&amp;", "&").strip(" \t\r\n'\"<>(),")
         if not absolute.startswith("http"):
             return
         if host not in absolute.replace("www.", "").lower():
