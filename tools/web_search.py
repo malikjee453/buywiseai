@@ -929,7 +929,7 @@ def _verify_search_engine_products(source, config, query, budget, limit=6):
             return []
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(verify, item) for item in candidates[:limit]]
+        futures = [pool.submit(verify, item) for item in candidates[:max(limit, 10)]]
         for future in as_completed(futures):
             results.extend(future.result())
             if len(results) >= limit:
