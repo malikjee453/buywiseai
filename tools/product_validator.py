@@ -25,10 +25,17 @@ def validate_record(record):
         "live_source": source_type == "live_web",
     }
 
-    # A price is considered source-verified only when the extractor explicitly
-    # marked it as coming from structured Product/Offer data on the detail page.
+    # Price evidence is verified when it was extracted from the exact product
+    # page, either from structured Product/Offer data or visible page text.
+    # Search/listing-page context alone is not enough.
     price_source = str(metadata.get("price_source", "")).lower()
-    checks["price_verified"] = price_source == "jsonld_product_offer"
+    checks["price_verified"] = (
+        price_source in {"jsonld_product_offer", "product_page_text"}
+        and checks["product_url"]
+        and checks["title"]
+        and checks["price"]
+        and checks["live_source"]
+    )
 
     variant = str(metadata.get("variant", "")).strip()
     checks["variant_identified"] = bool(variant)
@@ -38,9 +45,23 @@ def validate_record(record):
     spec_count = sum(bool(str(v).strip()) for v in specs.values())
     checks["specs_present"] = spec_count > 0
 
-    if checks["price_verified"] and checks["product_url"] and checks["title"]:
+    # Full verification requires the exact live product page plus both price
+    # and at least one relevant specification from that same page.
+    if (
+        checks["price_verified"]
+        and checks["specs_present"]
+        and checks["product_url"]
+        and checks["title"]
+        and checks["source"]
+    ):
         status = "verified"
-    elif checks["product_url"] and checks["title"] and checks["price"]:
+    elif (
+        checks["product_url"]
+        and checks["title"]
+        and checks["price"]
+        and checks["source"]
+        and checks["live_source"]
+    ):
         status = "partial"
     else:
         status = "insufficient"
