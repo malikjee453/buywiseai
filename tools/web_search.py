@@ -4,6 +4,9 @@ from urllib.parse import quote_plus, urljoin, unquote
 from urllib.request import Request, urlopen
 import re
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 from tools.product_validator import validate_record
 
 # Supported shopping sources. A source is only returned when BuyWise can
