@@ -1,4 +1,5 @@
 import streamlit as st
+from urllib.parse import urlsplit
 
 from buywise.llm import LLMConfigurationError, get_llm
 from buywise.categories import SHOPPING_CATEGORIES
@@ -11,29 +12,39 @@ st.set_page_config(page_title="BuyWiseAI", page_icon="🛒", layout="wide")
 
 st.title("🛒 BuyWiseAI")
 st.caption("Multi-agent product search and price comparison — Stage 2")
-st.caption("Build: source-diversity verification enabled")
+st.caption("Build: 10 different shopping websites target")
 
 st.markdown(
     """
     ### Real product search
-    Search multiple providers in parallel, keep results with a usable product URL
-    and parseable currency price, and remove duplicate destination URLs.
+    Search multiple discovery providers and targeted shopping websites.
+    BuyWiseAI returns **one verified product per shopping website** rather than
+    ten products from the same store.
     """
 )
 
 query = st.text_input("Product query", "iPhone 15 128GB")
+
 currency = st.selectbox(
     "Display currency",
     ["PKR", "USD", "GBP"],
 )
-max_results = st.slider("Maximum total results", 5, 10, 10)
+
+max_results = st.slider(
+    "Maximum total results",
+    5,
+    10,
+    10,
+)
 
 with st.expander("Search provider status"):
-    st.write("Serper.dev, SerpAPI, Tavily, Brave Search, DuckDuckGo, plus targeted shopping-platform discovery.")
-st.caption("Final results: maximum 10 total, one verified product per shopping website.")
+    st.write(
+        "Serper.dev, SerpAPI, Tavily, Brave Search, plus targeted "
+        "shopping-platform discovery."
+    )
     st.caption(
         "Paid providers are used only when their API key is configured. "
-        "DuckDuckGo and targeted platform discovery do not require a key."
+        "Targeted platform discovery uses free search backends."
     )
 
 with st.expander("Shopping categories in BuyWiseAI"):
@@ -59,7 +70,7 @@ if st.button("🔎 Search products", type="primary"):
             )
 
             with st.status(
-                "Searching multiple providers...",
+                "Searching multiple providers and shopping websites...",
                 expanded=True,
             ) as status:
                 raw_results, listings, errors = run_search(
@@ -68,41 +79,52 @@ if st.button("🔎 Search products", type="primary"):
                     max_results=max_results,
                 )
                 status.update(
-                    label=f"Search complete — {len(listings)} priced results",
+                    label=f"Search complete — {len(listings)} unique shopping sources",
                     state="complete",
                 )
 
             if errors:
+                # Only real provider failures are shown. Empty DDG results are
+                # intentionally handled as normal empty discovery.
                 with st.expander(f"Provider issues ({len(errors)})"):
                     for error in errors:
                         st.warning(error)
 
             if not listings:
                 st.warning(
-                    "No verified priced products were found. "
-                    "The free search backends returned no usable offers. "
-                    "For reliable shopping coverage, configure SERPER_API_KEY "
-                    "in Streamlit Secrets."
+                    "No verified priced product results were found. "
+                    "Try a more specific product query or configure "
+                    "SERPER_API_KEY / another search provider in Streamlit Secrets."
                 )
             else:
-                distinct_sources = len({__import__("urllib.parse", fromlist=["urlsplit"]).urlsplit(str(item.url)).netloc.lower().removeprefix("www.") for item in listings})
+                distinct_sources = len({
+                    urlsplit(str(item.url)).netloc.lower().removeprefix("www.")
+                    for item in listings
+                })
+
                 st.success(
                     f"Found {len(listings)} verified priced results from "
-                    f"{distinct_sources} shopping sources."
+                    f"{distinct_sources} different shopping websites."
                 )
+
                 if len(listings) < 10 or distinct_sources < 8:
                     st.info(
-                        "Coverage is currently below the target of 10 products "
-                        "from 8+ distinct sources. BuyWiseAI will never invent "
-                        "prices or products to fill the table."
+                        "Coverage is below the target of 10 products from "
+                        "8+ distinct shopping websites. BuyWiseAI will never "
+                        "duplicate a store or invent a price to fill the table."
+                    )
+                else:
+                    st.success(
+                        "Coverage target reached: 10 products from 8+ "
+                        "different shopping websites."
                     )
 
                 rows = [
                     {
                         "Product": item.title,
                         "Price": f"{item.currency} {item.price:,.2f}",
-                        "Source": item.source,
-                        "URL": str(item.url),
+                        "Shopping website": item.source,
+                        "Product page": str(item.url),
                     }
                     for item in listings
                 ]
@@ -112,18 +134,15 @@ if st.button("🔎 Search products", type="primary"):
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        "URL": st.column_config.LinkColumn("Product page"),
+                        "Product page": st.column_config.LinkColumn(
+                            "Product page"
+                        ),
                     },
                 )
 
                 with st.expander("Raw provider results"):
-                    st.write(f"Raw results received: {len(raw_results)}")
-                    st.json(
-                        [
-                            item.model_dump()
-                            for item in raw_results[:100]
-                        ]
-                    )
+                    st.write(f"Raw discovery results received: {len(raw_results)}")
+                    st.json([item.model_dump() for item in raw_results[:100]])
 
         except Exception as exc:
             st.error(f"Search failed: {type(exc).__name__}: {exc}")
