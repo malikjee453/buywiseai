@@ -138,6 +138,12 @@ def _record_from_context(context, source, url):
         return None
 
     currency = "USD" if symbol == "$" else "PKR"
+
+    # Reject obviously broken price snippets. Some retailer pages contain
+    # installment fragments, quantities, ratings, or unrelated numbers such
+    # as "Rs 3" before the actual product price.
+    if currency == "PKR" and price < 1000:
+        return None
     price_text = f"{currency} {price:,}"
     title = _clean(context[:140])
 
@@ -348,7 +354,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
     # replace) those results with indexed product pages.
     results = _search_source(source, config, query, budget, group)
 
-    if len(results) >= 3:
+    if len(results) >= 12:
         return results[:12]
 
     existing_urls = {
