@@ -137,6 +137,15 @@ def verify_evidence(query, structured, evidence):
     result["conflicts"] = _clean_messages(result["conflicts"] + local_conflicts)
     result["gaps"] = _clean_messages(result["gaps"] + local_gaps)
 
+    # Preserve the original live evidence records for downstream agents.
+    # The LLM's verified_claims are summaries and must never replace source URLs.
+    result["evidence_records"] = [
+        item for item in evidence
+        if isinstance(item, dict)
+        and str(item.get("source_type", "")).lower() == "live_web"
+        and item.get("metadata", {}).get("url")
+    ]
+
     if result["conflicts"]:
         result["status"] = "conflicting"
     elif result["gaps"]:
