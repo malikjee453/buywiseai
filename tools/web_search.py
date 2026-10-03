@@ -86,22 +86,43 @@ def _extract_specs(text):
     return specs
 
 def _record_from_context(context, source, url):
-    price_match = re.search(r"(?:Rs\.?|PKR|\$)\s*([0-9][0-9,]*(?:\.\d+)?)", context, re.I)
+    # Search/category pages are evidence-discovery pages, not product records.
+    if not re.search(r"/(product|item|p/|dp/|mobiles/)[^?]*", url, re.I):
+        return None
+
+    price_match = re.search(r"(PKR|Rs\.?|\$)\s*([0-9][0-9,]*(?:\.\d+)?)", context, re.I)
     if not price_match:
         return None
-    price = _money(price_match.group(1))
+
+    symbol = price_match.group(1).upper()
+    amount = price_match.group(2)
+    price = _money(amount)
     if not price:
         return None
+
+    currency = "USD" if symbol == "$" else "PKR"
+    price_text = f"{currency} {price:,}"
     title = _clean(context[:140])
+
+    # Reject obvious HTML/JS/navigation fragments.
+    bad_title = (
+        "privacy", "cookie policy", "goldlog", "setmetainfo", "javascript",
+        "please ensure", "defaultpicurl", "function(", "arguments"
+    )
+    if any(x in title.lower() for x in bad_title):
+        return None
+    if len(title) < 8 or not PRODUCT_WORDS.search(title):
+        return None
+
     return {
         "text": context[:900],
         "source": source,
         "source_type": "live_web",
-        "price": f"PKR {price:,}",
+        "price": price_text,
         "metadata": {
             "title": title[:120],
-            "country": "Pakistan" if source not in ("AliExpress", "Temu") else "international",
-            "currency": "PKR" if "PKR" in context.upper() or "Rs" in context else "source_currency",
+            "country": "Pakistan" if currency == "PKR" else "international",
+            "currency": currency,
             "url": url,
             "specs": _extract_specs(context),
         },
@@ -192,9 +213,8 @@ def _search_source(source, config, query, budget, group):
             if len(results) >= 8:
                 break
 
-        if not results:
-            results = _price_contexts(html, source, url, limit=8)
-
+        # Never turn a retailer's search/category page into a product record.
+        # Only detail-page URLs discovered above are eligible.
         filtered = []
         for record in results:
             if budget:
@@ -256,13 +276,16 @@ def _search_source_with_fallback(source, config, query, budget, group):
             break
 
     if not results:
-        return _price_contexts("", source, config["base"], limit=0)
+        return []
 
     filtered = []
     for record in results:
         price = _money(record.get("price"))
-        if budget and price and price > budget:
-            continue
+        # A PKR budget can only be compared against a PKR price. Never
+        # mislabel USD/other currencies as PKR.
+        if budget and record.get("metadata", {}).get("currency") == "PKR":
+            if price and price > budget:
+                continue
         filtered.append(record)
     return filtered[:6]
 
