@@ -44,11 +44,9 @@ def _build_listings(
     all_raw: list[RawSearchResult],
     original_query: str,
 ) -> list[ProductListing]:
-    listings: list[ProductListing] = []
-    seen_urls: set[str] = set()
-    source_counts: dict[str, int] = {}
-
+    """Build a maximum of 10 verified offers, with at most one offer per store."""
     candidates: list[tuple[ProductListing, str]] = []
+    seen_urls: set[str] = set()
 
     for item in all_raw:
         relevant, _ = is_relevant_product(original_query, item)
@@ -60,47 +58,49 @@ def _build_listings(
             continue
 
         canonical_url = normalize_url(str(listing.url))
-        # Canonicalize the merchant by its product URL so "PriceOye",
-        # "priceoye.pk", etc. cannot become separate sources.
         source = infer_source(canonical_url, listing.source).lower()
-
         if not canonical_url or canonical_url in seen_urls:
             continue
 
-        # Search/category landing pages are not individual offers. They often
-        # expose one generic price that can create misleading duplicates.
         path = canonical_url.split("?", 1)[0].rstrip("/").lower()
-        category_markers = (
+        bad_path_markers = (
             "/search", "/category", "/categories", "/collections",
-            "/shop",
+            "/shop", "/compare", "/comparison", "/search-results",
         )
-        if any(marker in path for marker in category_markers):
+        if any(marker in path for marker in bad_path_markers):
             continue
 
+        seen_urls.add(canonical_url)
         candidates.append((listing, source))
 
-    # Prefer source diversity first. This prevents two Daraz/category pages
-    # from consuming the result slots before other stores are considered.
-    for preferred_round in (1, 2):
-        for listing, source in candidates:
-            if source_counts.get(source, 0) >= preferred_round:
+    # One result per shopping website. This is a hard diversity rule.
+    # First remove obviously suspicious prices after computing a robust median.
+    prices = sorted(item.price for item, _ in candidates if item.currency == "PKR")
+    median = prices[len(prices) // 2] if prices else None
+
+    listings: list[ProductListing] = []
+    seen_sources: set[str] = set()
+
+    for listing, source in candidates:
+        if source in seen_sources:
+            continue
+
+        # A price dramatically below the market cluster is not trusted.
+        # It may be an accessory, deposit, used item, typo, or unrelated offer.
+        if median is not None and listing.currency == "PKR" and len(prices) >= 3:
+            if listing.price < median * 0.20:
                 continue
 
-            canonical_url = normalize_url(str(listing.url))
-            if canonical_url in seen_urls:
-                continue
+        listing.verified = True
+        listing.verification_note = (
+            "Matched product/spec evidence, has a parseable price and URL, "
+            "and passed source/price sanity checks."
+        )
+        seen_sources.add(source)
+        listings.append(listing)
 
-            listing.verified = True
-            listing.verification_note = (
-                "Matched requested product/spec evidence and has a parseable price + URL."
-            )
-            seen_urls.add(canonical_url)
-            source_counts[source] = source_counts.get(source, 0) + 1
-            listings.append(listing)
-
-            # The final table is globally capped at 10 products.
-            if len(listings) >= TARGET_RESULTS:
-                return listings
+        if len(listings) >= TARGET_RESULTS:
+            break
 
     return listings
 
