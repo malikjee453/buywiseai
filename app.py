@@ -41,7 +41,7 @@ with st.expander("Shopping categories in BuyWiseAI"):
 
 with st.expander(f"Shopping platforms in BuyWiseAI ({platform_count()})"):
     for category, platforms in PLATFORMS.items():
-        st.markdown(f"**{category.replace(\"_\", \" \").title()}**")
+        st.markdown(f"**{category.replace('_', ' ').title()}**")
         st.write(", ".join(platforms.keys()))
 
 if st.button("🔎 Search products", type="primary"):
