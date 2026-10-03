@@ -423,53 +423,95 @@ def _price_contexts(html, source, page_url, limit=12):
     return results
 
 def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
-    """Extract product evidence from listing HTML without relying on anchor text lookup."""
+    """Extract product-card evidence from listing HTML.
+
+    Retailer cards vary widely: prices may be separated from the anchor by
+    nested markup, tracking attributes, or several thousand characters of HTML.
+    We therefore locate the exact product href first, then inspect a generous
+    local card window and choose a sensible PKR price from that window.
+    """
     parser = _LinkParser()
     parser.feed(html)
     results = []
     seen = set()
 
-    # Anchor text is often split by nested tags or HTML entities, so searching
-    # raw HTML for the rendered title is unreliable. Locate the href instead.
-    href_positions = {}
+    candidates = []
     for href, anchor in parser.links:
-        absolute = urljoin(page_url, href)
-        absolute = absolute.split("?", 1)[0].rstrip("/")
-        if not anchor or absolute in seen or not _is_product_url(source, absolute):
+        if not href or not anchor:
+            continue
+        absolute = urljoin(page_url, href).split("?", 1)[0].rstrip("/")
+        anchor = _clean(unquote(anchor))
+        if absolute in seen or not _is_product_url(source, absolute):
             continue
         if not PRODUCT_WORDS.search(anchor):
             continue
-        href_positions.setdefault(href, (absolute, _clean(anchor)))
-
-    for raw_href, (absolute, anchor) in href_positions.items():
         seen.add(absolute)
+        candidates.append((href, absolute, anchor))
+
+    for raw_href, absolute, anchor in candidates:
         escaped_href = re.escape(raw_href)
-        match = re.search(r"""href\s*=\s*["']""" + escaped_href + r"""["']""", html, re.I)
+        match = re.search(
+            r"""href\s*=\s*["']""" + escaped_href + r"""["']""",
+            html,
+            re.I,
+        )
         if not match:
-            # Some pages normalize/encode the href. Try the absolute URL too.
             match = re.search(re.escape(absolute), html, re.I)
         if not match:
             continue
 
-        start = max(0, match.start() - 2500)
-        end = min(len(html), match.end() + 2500)
+        start = max(0, match.start() - 5000)
+        end = min(len(html), match.end() + 5000)
         raw_context = html[start:end]
-        visible_context = re.sub(r"<[^>]+>", " ", raw_context)
-        visible_context = _clean(unquote(visible_context))
+        visible_context = _clean(
+            unquote(re.sub(r"<[^>]+>", " ", raw_context))
+        )
 
-        # Put the exact product title first so _record_from_context uses it
-        # rather than navigation text from the surrounding card.
-        context = anchor + " " + visible_context
+        # Prefer an in-budget price when the user supplied a budget.
+        price_matches = list(
+            re.finditer(
+                r"(?:PKR|Rs\.?)\s*[0-9][0-9,]*(?:\.\d+)?",
+                visible_context,
+                re.I,
+            )
+        )
+        chosen_price = None
+        for price_match in price_matches:
+            value = _money(price_match.group(0))
+            if value and value >= 1000 and (not budget or value <= budget):
+                chosen_price = price_match.group(0)
+                break
+        if chosen_price is None and price_matches:
+            chosen_price = price_matches[0].group(0)
+        if not chosen_price:
+            continue
+
+        # Put the exact product title first. This prevents navigation/footer
+        # text in the card window from becoming the displayed product name.
+        context = f"{anchor} {chosen_price} {visible_context}"
         record = _record_from_context(context, source, absolute)
-        if record:
-            price = _money(record.get("price"))
-            if budget and price and price > budget:
-                continue
-            record["metadata"]["title"] = anchor[:120]
-            record["metadata"]["url"] = absolute
-            record["metadata"]["price_source"] = "listing_page_text"
-            record["metadata"]["listing_verified"] = True
-            results.append(record)
+        if not record:
+            continue
+
+        price = _money(record.get("price"))
+        if budget and (not price or price > budget):
+            continue
+
+        clean_title = re.sub(
+            r"\s+(?:ask other llm models|refine your code|refine the code).*$",
+            "",
+            anchor,
+            flags=re.I,
+        ).strip()
+        if len(clean_title) < 8:
+            continue
+
+        record["metadata"]["title"] = clean_title[:120]
+        record["metadata"]["url"] = absolute
+        record["metadata"]["price_source"] = "listing_page_text"
+        record["metadata"]["listing_verified"] = False
+        results.append(record)
+
         if len(results) >= limit:
             break
 
