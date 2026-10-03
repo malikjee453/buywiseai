@@ -339,34 +339,48 @@ def _search_source(source, config, query, budget, group):
 
 
 def _search_engine_candidates(source, config, query):
-    """Discover indexed product pages when a retailer's search page is JS/blocking."""
-    search_url = (
-        "https://www.google.com/search?q="
-        + quote_plus(f"site:{config['base'].replace('https://','').replace('www.','')} {query}")
-    )
-    try:
-        html = _fetch(search_url, timeout=8)
-        parser = _LinkParser()
-        parser.feed(html)
-        candidates = []
-        seen = set()
-        for href, anchor in parser.links:
-            if not href or not anchor:
+    """Discover indexed product pages when a retailer search page is JS/blocking."""
+    host = config["base"].split("//", 1)[-1].replace("www.", "")
+    search_queries = [
+        f"site:{host} {query}",
+        f"site:{host} smartphone PKR battery camera",
+    ]
+    candidates = []
+    seen = set()
+
+    for engine in ("https://www.google.com/search?q=", "https://www.bing.com/search?q="):
+        for search_query in search_queries:
+            try:
+                html = _fetch(engine + quote_plus(search_query), timeout=8)
+                parser = _LinkParser()
+                parser.feed(html)
+
+                for href, anchor in parser.links:
+                    if not href or not anchor:
+                        continue
+
+                    absolute = href
+                    if absolute.startswith("/url?q="):
+                        absolute = absolute.split("/url?q=", 1)[1].split("&", 1)[0]
+
+                    if not absolute.startswith("http"):
+                        continue
+                    if host not in absolute.replace("www.", ""):
+                        continue
+                    if absolute in seen:
+                        continue
+                    if not _is_product_url(source, absolute):
+                        continue
+
+                    seen.add(absolute)
+                    candidates.append((absolute, anchor))
+
+                    if len(candidates) >= 30:
+                        return candidates
+            except Exception:
                 continue
-            absolute = href
-            if absolute.startswith("/url?q="):
-                absolute = absolute.split("/url?q=", 1)[1].split("&", 1)[0]
-            if not absolute.startswith("http"):
-                continue
-            if config["base"].split("//", 1)[-1].replace("www.", "") not in absolute.replace("www.", ""):
-                continue
-            if absolute in seen:
-                continue
-            seen.add(absolute)
-            candidates.append((absolute, anchor))
-        return candidates[:20]
-    except Exception:
-        return []
+
+    return candidates
 
 def _search_source_with_fallback(source, config, query, budget, group):
     # First use the retailer's own search page. Some retailers expose only a
@@ -458,16 +472,19 @@ def search_web(query, category=""):
         seen.add(key)
         unique.append(item)
 
-    # Keep results diverse: up to 3 products per source and up to 30 total.
-    # This prevents one marketplace from filling the entire result set.
-    balanced = []
-    counts = {}
+    # Keep results diverse. Round-robin across sources first so a single
+    # retailer cannot consume the entire evidence set.
+    by_source = {}
     for item in unique:
-        source = item.get("source", "Unknown")
-        if counts.get(source, 0) >= 4:
-            continue
-        counts[source] = counts.get(source, 0) + 1
-        balanced.append(item)
-        if len(balanced) >= 30:
-            break
+        by_source.setdefault(item.get("source", "Unknown"), []).append(item)
+
+    balanced = []
+    max_per_source = 4
+    for round_index in range(max_per_source):
+        for source, source_items in by_source.items():
+            if round_index < len(source_items):
+                balanced.append(source_items[round_index])
+                if len(balanced) >= 30:
+                    return balanced
+
     return balanced
