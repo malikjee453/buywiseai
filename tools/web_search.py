@@ -407,12 +407,55 @@ def _jsonld_product_records(html, source, page_url):
 
 
 def _price_contexts(html, source, page_url, limit=12):
-    """Extract product prices while rejecting installment/monthly-payment noise."""
+    """Extract the retailer's actual product price before generic page prices."""
     parser = _TextParser()
     parser.feed(html)
     text = _clean(" ".join(parser.parts))
-    matches = []
+    results = []
 
+    def make_record(match, context):
+        record = _record_from_context(context, source, page_url)
+        return record
+
+    # Prefer explicit product-price statements. This avoids FAQ text such as
+    # "PTA tax ranges from Rs. 50,000..." being mistaken for the product price.
+    authoritative = []
+    patterns = (
+        r"(?:latest|current|updated)?\s*(?:the\s+)?(?:price|latest price)\s+"
+        r"(?:for|of)?\s*[^.]{0,180}?\s+(?:is|:)\s*"
+        r"(?:PKR|Rs\.?)\s*[0-9][0-9,]*(?:\.\d+)?",
+        r"(?:^|\s)(?:price)\s*[:\-]\s*(?:PKR|Rs\.?)\s*[0-9][0-9,]*(?:\.\d+)?",
+        r"(?:PKR|Rs\.?)\s*[0-9][0-9,]*(?:\.\d+)?\s*[-–]\s*(?:PKR|Rs\.?)",
+    )
+
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.I):
+            value = _money(match.group(0))
+            if not value:
+                continue
+            context = text[max(0, match.start()-180):min(len(text), match.end()+260)]
+            if not PRODUCT_WORDS.search(context):
+                continue
+            record = make_record(match, context)
+            if record:
+                authoritative.append((value, record))
+                if len(authoritative) >= limit:
+                    break
+        if len(authoritative) >= limit:
+            break
+
+    if authoritative:
+        seen = set()
+        for value, record in authoritative:
+            if value in seen:
+                continue
+            seen.add(value)
+            results.append(record)
+            if len(results) >= limit:
+                return results
+
+    # Fallback for retailers that do not expose a clear price label.
+    matches = []
     for match in re.finditer(
         r"(?:Rs\.?|PKR|\$)\s*[0-9][0-9,]*(?:\.\d+)?",
         text,
@@ -421,44 +464,30 @@ def _price_contexts(html, source, page_url, limit=12):
         value = _money(match.group(0))
         if not value:
             continue
-
         context = text[max(0, match.start()-320):min(len(text), match.end()+420)]
         if not PRODUCT_WORDS.search(context):
             continue
 
         window = context.lower()
         score = 0
-
         for token in (
             "latest price", "current price", "our price", "sale price",
             "price in pakistan", "price:", "price ", "buy now",
         ):
             if token in window:
                 score += 4
-
         for token in (
             "per month", "/month", "monthly", "installment", "installments",
             "emi", "down payment", "advance payment", "deposit",
         ):
             if token in window:
                 score -= 12
-
-        label_match = re.search(
-            r"(?:latest|current|our|sale)?\s*price(?:\s+in\s+pakistan)?\s*[:\-]?\s*(?:rs\.?|pkr)?\s*[0-9]",
-            window,
-            re.I,
-        )
-        if label_match:
-            score += 8
-
         if value < 10000:
             score -= 2
 
         matches.append((score, value, match))
 
     matches.sort(key=lambda item: (-item[0], item[1]))
-
-    results = []
     seen_prices = set()
     for _, value, match in matches:
         if value in seen_prices:
