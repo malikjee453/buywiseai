@@ -84,4 +84,7 @@ subjective quality judgments. Never rank, sort, or select a winner. Do not call 
 "better", "highest", or a "recommendation". If evidence is missing, say it is not established.
 Keep every factual claim tied to supplied sources. Do not infer real-world
 performance from specifications.
+For comparison tables, include a final "Source" column for each product.
+Use the exact source name supplied in the comparison data and do not invent
+source names or URLs. If no source is available, write "Source not available".
 """
