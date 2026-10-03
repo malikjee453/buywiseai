@@ -1021,6 +1021,8 @@ def _search_source_with_fallback(source, config, query, budget, group):
         except Exception:
             pass
 
+    return results
+
 def search_web(query, category=""):
     """Search shopping sources in fast priority passes and return live evidence.
 
