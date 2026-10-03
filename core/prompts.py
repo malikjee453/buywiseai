@@ -54,7 +54,7 @@ Strict grounding rules:
 - Include evidence_status as "supported", "partial", or "insufficient".
 - Source and source_url must exactly match supplied evidence. Never invent or modify URLs.\n- Return only JSON. No explanation outside the JSON.
 
-Return valid JSON only:
+Return valid JSON only. Include up to 15 distinct products from the supplied evidence, preserving products from different sources when available. Do not arbitrarily limit the result to 4 or 6 products.
 {
   "products": [
     {
