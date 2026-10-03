@@ -63,7 +63,7 @@ PRODUCT_WORDS = re.compile(
     r"(iphone|galaxy|redmi|vivo|oppo|tecno|infinix|xiaomi|realme|motorola|honor|"
     r"oneplus|pixel|itel|nokia|dcode|sparx|xmobile|phone|mobile|laptop|tablet|"
     r"headphone|earbuds|watch|tv|shirt|dress|kurta|lawn|shoe|sandal|grocery|"
-    r"rice|milk|oil|atta|cosmetic|perfume|skincare)",
+    r"rice|milk|oil|atta|cosmetic|perfume|skincare|skirt|skirts)",
     re.I,
 )
 
@@ -97,7 +97,7 @@ def _budget_from_query(query):
 
 def _query_group(query):
     q = query.lower()
-    if any(x in q for x in ("dress", "shirt", "kurta", "lawn", "abaya", "shoe", "sandal", "fashion", "clothes")):
+    if any(x in q for x in ("dress", "shirt", "kurta", "lawn", "abaya", "skirt", "skirts", "shoe", "sandal", "fashion", "clothes")):
         return "fashion"
     if any(x in q for x in ("grocery", "food", "milk", "atta", "rice", "oil", "snack")):
         return "grocery"
