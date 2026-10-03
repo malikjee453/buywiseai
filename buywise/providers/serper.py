@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import os
-
 import httpx
 
 from buywise.schemas import RawSearchResult
 from .base import SearchProvider
+from .credentials import get_secret
 
 
 class SerperProvider(SearchProvider):
@@ -13,7 +12,7 @@ class SerperProvider(SearchProvider):
     env_var = "SERPER_API_KEY"
 
     def search(self, query: str, country: str, max_results: int) -> list[RawSearchResult]:
-        key = os.getenv(self.env_var, "").strip()
+        key = get_secret(self.env_var)
         if not key:
             return []
         country_code = {"Pakistan": "pk", "United States": "us", "United Kingdom": "gb"}.get(country, "us")
