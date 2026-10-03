@@ -924,15 +924,77 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
     # it instead of returning a misleading "partially verified" price.
     return results[:limit]
 
+def _verify_search_engine_products(source, config, query, budget, limit=6):
+    """Use Google/Bing discovery first, then verify each exact product page."""
+    candidates = _search_engine_candidates(source, config, query)
+    results = []
+
+    def verify(item):
+        product_url, _anchor = item
+        try:
+            detail_html = _fetch(product_url, timeout=5)
+            parser = _TextParser()
+            parser.feed(detail_html)
+            detail_text = _clean(" ".join(parser.parts))
+
+            records = _price_contexts(
+                detail_html, source, product_url, limit=2
+            )
+            verified = []
+            for record in records:
+                price = _money(record.get("price"))
+                if budget and price and price > budget:
+                    continue
+
+                # The exact product page is authoritative. Never replace its
+                # title with a Google/Bing result anchor.
+                detail_title = _clean(
+                    record.get("metadata", {}).get("title", "")
+                )
+                if not detail_title:
+                    continue
+
+                record["metadata"]["title"] = detail_title[:120]
+                record["metadata"]["url"] = product_url
+                record["metadata"]["price_source"] = "product_page_text"
+                record["text"] = detail_text[:1800]
+                _enrich_detail_metadata(record, detail_text, source)
+                verified.append(record)
+            return verified
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(verify, item) for item in candidates[:limit * 4]]
+        for future in as_completed(futures):
+            results.extend(future.result())
+            if len(results) >= limit:
+                break
+
+    return results[:limit]
+
+
 def _search_source_with_fallback(source, config, query, budget, group):
-    # These retailers need exact product-page discovery first. Their public
-    # category/search HTML is often incomplete or JavaScript-heavy.
-    if source in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
-        results = _dedicated_catalog_candidates(source, config, query, budget, limit=6)
-        if len(results) < 3:
-            results.extend(_search_source(source, config, query, budget, group))
-    else:
-        results = _search_source(source, config, query, budget, group)
+    # PRIMARY DISCOVERY: Google/Bing search indexes are queried first because
+    # retailer search/category pages are often incomplete or JavaScript-only.
+    # Every discovered URL still has to pass exact product-page verification.
+    results = _verify_search_engine_products(
+        source, config, query, budget, limit=6
+    )
+
+    # Retailer-specific discovery is a secondary path used to find products
+    # that search engines did not expose.
+    if len(results) < 3:
+        if source in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
+            results.extend(
+                _dedicated_catalog_candidates(
+                    source, config, query, budget, limit=6
+                )
+            )
+        else:
+            results.extend(
+                _search_source(source, config, query, budget, group)
+            )
 
     if not results:
         # A listing page may expose Product JSON-LD even when its visible HTML
@@ -954,42 +1016,6 @@ def _search_source_with_fallback(source, config, query, budget, group):
                     break
         except Exception:
             pass
-
-    if len(results) >= 12:
-        return results[:12]
-
-    existing_urls = {
-        str(item.get("metadata", {}).get("url", ""))
-        for item in results
-    }
-
-    fallback_limit = 8 if source in {"Daraz Pakistan", "Shophive", "Mega.pk", "iShopping"} else 6
-    for product_url, anchor in _search_engine_candidates(source, config, query)[:fallback_limit]:
-        if product_url in existing_urls:
-            continue
-
-        try:
-            detail_html = _fetch(product_url, timeout=4)
-            detail_parser = _TextParser()
-            detail_parser.feed(detail_html)
-            detail_text = _clean(" ".join(detail_parser.parts))
-            detail = _price_contexts(detail_html, source, product_url, limit=1)
-            if detail:
-                detail[0]["metadata"]["title"] = anchor[:120]
-                detail[0]["text"] = detail_text[:1800]
-                _enrich_detail_metadata(detail[0], detail_text, source)
-                price = _money(detail[0].get("price"))
-                currency = detail[0].get("metadata", {}).get("currency")
-                if not (budget and currency == "PKR" and price and price > budget):
-                    results.extend(detail)
-                    existing_urls.add(product_url)
-        except Exception:
-            continue
-
-        if len(results) >= 12:
-            break
-
-    return results[:12]
 
 def search_web(query, category=""):
     """Search shopping sources in fast priority passes and return live evidence.
