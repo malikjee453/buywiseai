@@ -14,6 +14,23 @@ def render_research_form():
         language = st.selectbox("Answer language", ["English", "Urdu"])
     return query, category, budget, language
 
+def render_comparison_table(products):
+    if not products:
+        return
+    rows = []
+    for p in products:
+        specs = p.get("key_specs", {})
+        source = p.get("source", "Source not available")
+        url = p.get("source_url", "")
+        source_cell = f"[{source}]({url})" if url else source
+        rows.append(
+            f"| {p.get('name', 'Product')} | {p.get('price', 'Not available in evidence')} | "
+            f"{specs.get('battery', 'Not available in evidence')} | "
+            f"{specs.get('camera', 'Not available in evidence')} | {source_cell} |"
+        )
+    st.markdown("### Quick comparison")
+    st.markdown("| Product | Price | Battery | Camera | Source |\n|---|---:|---:|---:|---|\n" + "\n".join(rows))
+
 def render_product_cards(products):
     if not products:
         st.info("No structured comparison was produced from the available evidence.")
