@@ -19,10 +19,6 @@ st.markdown(
 )
 
 query = st.text_input("Product query", "iPhone 15 128GB")
-country = st.selectbox(
-    "Country",
-    ["Pakistan", "United States", "United Kingdom"],
-)
 currency = st.selectbox(
     "Display currency",
     ["PKR", "USD", "GBP"],
@@ -44,7 +40,7 @@ if st.button("🔎 Search products", type="primary"):
             parsed = ProductQuery(
                 original_query=query,
                 normalized_query=query,
-                country=country,
+                country="Pakistan",
                 currency=currency,
             )
 
