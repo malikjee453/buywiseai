@@ -99,15 +99,17 @@ def _is_product_url(source, url):
     if re.search(r"/(product|item|p|dp|products|mobiles)/[^/]+", path, re.I):
         return True
 
-    # Shophive product pages use /<slug>.html or /product/<slug>.
+    # Shophive uses /mobile-phones/<product-slug> for individual products.
     if "shophive.com" in path:
         blocked = (
-            "/catalogsearch", "/search", "/mobile-phones", "/category",
-            "/categories", "/customer", "/checkout", "/cart", "/blog",
+            "/catalogsearch", "/search", "/category", "/categories",
+            "/customer", "/checkout", "/cart", "/blog",
         )
         if any(item in path for item in blocked):
             return False
-        return path.endswith(".html") or path.count("/") >= 2
+        if path.rstrip("/") == "https://www.shophive.com/mobile-phones":
+            return False
+        return "/mobile-phones/" in path or path.endswith(".html") or path.count("/") >= 2
 
     # Mega.pk mobile pages commonly use /mobiles/<slug>.
     if "mega.pk" in path and "/mobiles/" in path:
@@ -274,7 +276,14 @@ def _jsonld_product_records(html, source, page_url):
 
     def walk(value):
         if isinstance(value, dict):
-            if str(value.get("@type", "")).lower() == "product":
+            value_type = value.get("@type", "")
+            if (
+                (isinstance(value_type, str) and value_type.lower() == "product")
+                or (
+                    isinstance(value_type, list)
+                    and any(str(item).lower() == "product" for item in value_type)
+                )
+            ):
                 yield value
             graph = value.get("@graph")
             if isinstance(graph, list):
@@ -313,7 +322,7 @@ def _jsonld_product_records(html, source, page_url):
             if not product_url.startswith("http"):
                 product_url = urljoin(page_url, product_url)
 
-            price = offers.get("price")
+            price = offers.get("price") or offers.get("lowPrice")
             currency = str(offers.get("priceCurrency", "PKR")).upper()
             if not name or not price or not _is_product_url(source, product_url):
                 continue
@@ -432,7 +441,11 @@ def _search_engine_candidates(source, config, query):
     candidates = []
     seen = set()
 
-    for engine in ("https://www.google.com/search?q=", "https://www.bing.com/search?q="):
+    for engine in (
+        "https://www.google.com/search?q=",
+        "https://www.bing.com/search?q=",
+        "https://html.duckduckgo.com/html/?q=",
+    ):
         for search_query in search_queries:
             try:
                 html = _fetch(engine + quote_plus(search_query), timeout=8)
@@ -552,8 +565,9 @@ def search_web(query, category=""):
     ]
 
     results = []
-    # Six concurrent fetches keeps multi-source search practical on Streamlit Cloud.
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    # Give smaller retailers a chance to return evidence even when one
+    # large retailer is slow or blocks automated fetches.
+    with ThreadPoolExecutor(max_workers=10) as pool:
         futures = {
             pool.submit(_search_source_with_fallback, name, cfg, query, budget, group): name
             for name, cfg in selected
