@@ -6,7 +6,30 @@ from buywise.schemas import ProductQuery
 
 st.set_page_config(page_title="BuyWiseAI", page_icon="🛒", layout="wide")
 
-st.title("🛒 BuyWiseAI")
+st.markdown("""<svg xmlns="http://www.w3.org/2000/svg" width="760" height="300" viewBox="0 0 760 300">
+<defs>
+  <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#20B7B2"/><stop offset="1" stop-color="#1688C8"/></linearGradient>
+</defs>
+<rect width="760" height="300" fill="white"/>
+<!-- shopping bag -->
+<path d="M205 78h150l18 135c2 18-12 32-30 32H217c-18 0-32-14-30-32l18-135z" fill="url(#g)"/>
+<path d="M235 78V55c0-29 22-49 45-49s45 20 45 49v23" fill="none" stroke="#27B5B1" stroke-width="16" stroke-linecap="round"/>
+<!-- brain/network -->
+<path d="M214 135c0-28 22-48 48-48 15 0 27 6 36 17 11-10 27-15 42-8 15 7 24 21 24 38 0 7-2 14-5 20 8 9 11 21 8 33-4 17-19 29-37 29-7 0-14-2-20-5-9 8-21 13-34 13-18 0-33-10-40-25-12-6-22-19-22-34z" fill="white" opacity=".96"/>
+<g stroke="#176AAE" stroke-width="4" fill="none">
+<path d="M230 145l28-26 32 18 25-30 32 20 8 29-35 19-30-18-28 24-32-36z"/>
+<path d="M258 119l-4 44 31 18 2-44m32-30l-8 56 35 1"/>
+</g>
+<g fill="#176AAE">
+<circle cx="230" cy="145" r="7"/><circle cx="258" cy="119" r="7"/><circle cx="290" cy="137" r="7"/><circle cx="315" cy="107" r="7"/><circle cx="347" cy="127" r="7"/><circle cx="355" cy="156" r="7"/><circle cx="320" cy="175" r="7"/><circle cx="290" cy="157" r="7"/><circle cx="262" cy="181" r="7"/>
+</g>
+<!-- upward arrow -->
+<path d="M275 190l88-62 34 29 76-91 28 23-89 112-35-29-82 58z" fill="url(#g)"/>
+<path d="M442 69h64l-8 64-20-21-36 39-20-20 37-39z" fill="#28B5B3"/>
+<!-- wordmark -->
+<text x="55" y="278" font-family="Arial, Helvetica, sans-serif" font-size="74" font-weight="800" fill="#102B4C">BuyWise</text>
+<text x="495" y="278" font-family="Arial, Helvetica, sans-serif" font-size="74" font-weight="500" fill="#27B5B1">AI</text>
+</svg>""", unsafe_allow_html=True)
 st.caption("Find the best products and prices across Pakistan shopping websites.")
 
 st.markdown(
