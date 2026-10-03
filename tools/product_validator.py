@@ -2,7 +2,7 @@ import re
 
 
 def money(value):
-    digits = re.sub(r"\\D", "", str(value or ""))
+    digits = re.sub(r"\D", "", str(value or ""))
     return int(digits) if digits else None
 
 
