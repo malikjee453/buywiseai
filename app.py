@@ -82,10 +82,17 @@ if st.button("🔎 Search products", type="primary"):
                     "specific product query."
                 )
             else:
+                distinct_sources = len({item.source.strip().lower() for item in listings})
                 st.success(
-                    f"Found {len(listings)} results with a verified URL + "
-                    "parseable price."
+                    f"Found {len(listings)} verified priced results from "
+                    f"{distinct_sources} shopping sources."
                 )
+                if len(listings) < 10 or distinct_sources < 8:
+                    st.info(
+                        "Coverage is currently below the target of 10 products "
+                        "from 8+ distinct sources. BuyWiseAI will never invent "
+                        "prices or products to fill the table."
+                    )
 
                 rows = [
                     {
