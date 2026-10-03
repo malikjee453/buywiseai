@@ -12,7 +12,6 @@ from .serpapi import SerpApiProvider
 from .serper import SerperProvider
 from .tavily import TavilyProvider
 
-
 PROVIDERS: list[SearchProvider] = [
     SerperProvider(),
     SerpApiProvider(),
@@ -23,14 +22,25 @@ PROVIDERS: list[SearchProvider] = [
 ]
 
 MAX_RESULTS_PER_SOURCE = 2
+MAX_SEARCH_ROUNDS = 3
 
 
-def run_search(
+def _query_variants(query: str) -> list[str]:
+    clean = " ".join(query.split())
+    variants = [
+        clean,
+        f'"{clean}" Pakistan price',
+        f'Apple {clean} Pakistan price' if "apple" not in clean.lower() else f'{clean} Pakistan price',
+    ]
+    # Preserve order while removing duplicates.
+    return list(dict.fromkeys(variants))
+
+
+def _search_round(
     query: str,
     country: str,
-    max_results: int = 20,
-) -> tuple[list[RawSearchResult], list[ProductListing], list[str]]:
-    """Search providers in parallel, then strictly filter and deduplicate listings."""
+    max_results: int,
+) -> tuple[list[RawSearchResult], list[str]]:
     raw: list[RawSearchResult] = []
     errors: list[str] = []
 
@@ -42,42 +52,61 @@ def run_search(
             pool.submit(p.search, query, country, max_results): p
             for p in PROVIDERS
         }
-
         for future in as_completed(futures):
             provider = futures[future]
             try:
                 raw.extend(future.result())
             except Exception as exc:
-                errors.append(
-                    f"{provider.name}: {type(exc).__name__}: {exc}"
-                )
+                errors.append(f"{provider.name}: {type(exc).__name__}: {exc}")
 
-    listings: list[ProductListing] = []
-    seen_urls: set[str] = set()
-    source_counts: dict[str, int] = {}
+    return raw, errors
 
-    for item in raw:
-        relevant, _reason = is_relevant_product(query, item)
-        if not relevant:
-            continue
 
-        listing = raw_to_listing(item)
-        if not listing:
-            continue
+def run_search(
+    query: str,
+    country: str,
+    max_results: int = 20,
+) -> tuple[list[RawSearchResult], list[ProductListing], list[str]]:
+    """Search up to three targeted query variants and keep strict priced matches."""
+    all_raw: list[RawSearchResult] = []
+    errors: list[str] = []
 
-        canonical_url = normalize_url(str(listing.url))
-        source = listing.source.strip().lower()
+    for search_query in _query_variants(query)[:MAX_SEARCH_ROUNDS]:
+        raw, round_errors = _search_round(search_query, country, max_results)
+        all_raw.extend(raw)
+        errors.extend(round_errors)
 
-        if not canonical_url or canonical_url in seen_urls:
-            continue
-        if source_counts.get(source, 0) >= MAX_RESULTS_PER_SOURCE:
-            continue
+        listings: list[ProductListing] = []
+        seen_urls: set[str] = set()
+        source_counts: dict[str, int] = {}
 
-        listing.verified = True
-        listing.verification_note = "Matched requested product terms and has a parseable price + URL."
+        for item in all_raw:
+            relevant, _ = is_relevant_product(query, item)
+            if not relevant:
+                continue
 
-        seen_urls.add(canonical_url)
-        source_counts[source] = source_counts.get(source, 0) + 1
-        listings.append(listing)
+            listing = raw_to_listing(item)
+            if not listing:
+                continue
 
-    return raw, listings, errors
+            canonical_url = normalize_url(str(listing.url))
+            source = listing.source.strip().lower()
+
+            if not canonical_url or canonical_url in seen_urls:
+                continue
+            if source_counts.get(source, 0) >= MAX_RESULTS_PER_SOURCE:
+                continue
+
+            listing.verified = True
+            listing.verification_note = (
+                "Matched product/spec evidence and has a parseable price + URL."
+            )
+            seen_urls.add(canonical_url)
+            source_counts[source] = source_counts.get(source, 0) + 1
+            listings.append(listing)
+
+        distinct_sources = len(source_counts)
+        if len(listings) >= 10 or distinct_sources >= 8:
+            return all_raw, listings, errors
+
+    return all_raw, listings, errors
