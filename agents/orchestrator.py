@@ -1,7 +1,6 @@
 from agents.query_analyzer import analyze_query
 from agents.evidence_agent import verify_evidence
 from agents.comparison_agent import build_comparison
-from agents.response_agent import generate_response
 from rag.retriever import retrieve
 from tools.web_search import search_web
 
@@ -65,12 +64,12 @@ def run_buywise(query, category="", budget="", language="English"):
 
     evidence = verify_evidence(query, structured, retrieved)
     comparison = build_comparison(query, structured, evidence)
-    summary = generate_response(
-        query, structured, evidence, comparison, language
-    )
 
+    # The buyer-facing UI intentionally uses only the deterministic comparison
+    # table. Avoid an additional response-generation call because it adds
+    # latency/tokens without contributing anything to that table.
     return {
-        "summary": summary,
+        "summary": "",
         "comparison": comparison,
         "evidence_notes": (
             evidence.get("notes", [])
