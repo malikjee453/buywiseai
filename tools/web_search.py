@@ -15,6 +15,10 @@ SOURCE_CATALOG = {
     "PriceOye": {"base": "https://priceoye.pk", "search": "https://priceoye.pk/mobiles", "groups": {"electronics"}},
     "Telemart": {"base": "https://www.telemart.pk", "search": "https://www.telemart.pk/catalogsearch/result/?q={q}", "groups": {"electronics", "home", "general"}},
     "Shophive": {"base": "https://www.shophive.com", "search": "https://www.shophive.com/catalogsearch/result/?q={q}", "groups": {"electronics", "home", "general"}},
+    "Mega.pk": {"base": "https://www.mega.pk", "search": "https://www.mega.pk/mobiles/?q={q}", "groups": {"electronics"}},
+    "iShopping": {"base": "https://www.ishopping.pk", "search": "https://www.ishopping.pk/catalogsearch/result/?q={q}", "groups": {"electronics"}},
+    "HomeShopping": {"base": "https://www.homeshopping.pk", "search": "https://www.homeshopping.pk/search?q={q}", "groups": {"electronics", "home", "general"}},
+    "Galaxy": {"base": "https://www.galaxy.pk", "search": "https://www.galaxy.pk/search?q={q}", "groups": {"electronics"}},
     "Naheed": {"base": "https://www.naheed.pk", "search": "https://www.naheed.pk/catalogsearch/result/?q={q}", "groups": {"grocery", "home", "general"}},
     "Foodpanda / Pandamart": {"base": "https://www.foodpanda.pk", "search": "https://www.foodpanda.pk/contents/pandamart", "groups": {"grocery"}},
     "Sapphire": {"base": "https://pk.sapphireonline.pk", "search": "https://pk.sapphireonline.pk/search?q={q}", "groups": {"fashion"}},
@@ -87,7 +91,7 @@ def _extract_specs(text):
 
 def _record_from_context(context, source, url):
     # Search/category pages are evidence-discovery pages, not product records.
-    if not re.search(r"/(product|item|p/|dp/|mobiles/)[^?]*", url, re.I):
+    if not re.search(r"/(product|item|p/|dp/|mobiles/|products/)[^?]*", url, re.I):
         return None
 
     price_match = re.search(r"(PKR|Rs\.?|\$)\s*([0-9][0-9,]*(?:\.\d+)?)", context, re.I)
@@ -250,7 +254,7 @@ def _search_source(source, config, query, budget, group):
                     results.extend(detail)
             except Exception:
                 continue
-            if len(results) >= 8:
+            if len(results) >= 12:
                 break
 
         # Never turn a retailer's search/category page into a product record.
@@ -262,7 +266,7 @@ def _search_source(source, config, query, budget, group):
                 if price and price > budget:
                     continue
             filtered.append(record)
-        return filtered[:8]
+        return filtered[:12]
     except Exception:
         return []
 
@@ -319,7 +323,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
                 results.extend(detail)
         except Exception:
             continue
-        if len(results) >= 6:
+        if len(results) >= 12:
             break
 
     if not results:
@@ -334,7 +338,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
             if price and price > budget:
                 continue
         filtered.append(record)
-    return filtered[:6]
+    return filtered[:12]
 
 def search_web(query, category=""):
     """Search supported shopping sources and return only retrieved live evidence."""
@@ -376,15 +380,16 @@ def search_web(query, category=""):
         seen.add(key)
         unique.append(item)
 
-    # Keep the evidence set balanced across marketplaces.
+    # Keep results diverse: up to 3 products per source and up to 30 total.
+    # This prevents one marketplace from filling the entire result set.
     balanced = []
     counts = {}
     for item in unique:
         source = item.get("source", "Unknown")
-        if counts.get(source, 0) >= 4:
+        if counts.get(source, 0) >= 3:
             continue
         counts[source] = counts.get(source, 0) + 1
         balanced.append(item)
-        if len(balanced) >= 24:
+        if len(balanced) >= 30:
             break
     return balanced
