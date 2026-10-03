@@ -70,7 +70,7 @@ def _build_listings(
         path = canonical_url.split("?", 1)[0].rstrip("/").lower()
         category_markers = (
             "/search", "/category", "/categories", "/collections",
-            "/shop", "/mens", "/womens", "/women", "/men",
+            "/shop",
         )
         if any(marker in path for marker in category_markers):
             continue
