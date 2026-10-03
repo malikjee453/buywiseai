@@ -56,7 +56,9 @@ def _record_to_product(item):
         },
         "evidence_status": status,
         "source": source,
+        "source_name": source,
         "source_url": url,
+        "product_url": url,
         "availability": [{"source": source, "url": url}],
     }
 
