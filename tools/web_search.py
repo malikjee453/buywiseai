@@ -259,7 +259,7 @@ CATEGORY_TERMS = {
     "laptop": ("laptop", "notebook", "macbook", "thinkpad", "ideapad", "vivobook", "pavilion"),
     "electronics": ("phone", "mobile", "laptop", "tablet", "headphone", "earbuds", "watch", "camera", "tv", "monitor", "keyboard", "mouse", "speaker", "console"),
     "appliance": ("fridge", "refrigerator", "washing machine", "microwave", "oven", "air conditioner", "air fryer", "blender", "appliance"),
-    "fashion": ("shirt", "dress", "kurta", "lawn", "abaya", "shoe", "sandal", "clothing", "fashion"),
+    "fashion": ("shirt", "dress", "kurta", "lawn", "abaya", "skirt", "skirts", "shoe", "sandal", "clothing", "fashion"),
     "grocery": ("grocery", "rice", "milk", "oil", "atta", "flour", "snack", "food"),
 }
 
