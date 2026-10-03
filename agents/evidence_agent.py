@@ -6,40 +6,32 @@ from core.prompts import EVIDENCE_PROMPT
 MAX_EVIDENCE_ITEMS = 6
 MAX_TEXT_CHARS = 180
 
-
 def _normalize_price(value):
     if value is None:
         return None
     digits = re.sub(r"\D", "", str(value))
     return int(digits) if digits else None
 
-
 def _compact_evidence(evidence):
     compact = []
     seen = set()
-
     for item in evidence:
         if not isinstance(item, dict):
             continue
-
         metadata = item.get("metadata")
         if not isinstance(metadata, dict):
             metadata = {}
-
         specs = metadata.get("specs", {})
         if not isinstance(specs, dict):
             specs = {}
-
         source = str(item.get("source", "Unknown"))
         title = str(metadata.get("title") or source)
         price = item.get("price", "not extracted")
         text = str(item.get("text", ""))[:MAX_TEXT_CHARS]
-
         key = (source, title, str(price))
         if key in seen:
             continue
         seen.add(key)
-
         compact.append({
             "title": title[:120],
             "source": source,
@@ -48,50 +40,50 @@ def _compact_evidence(evidence):
             "specs": specs,
             "evidence": text,
         })
-
         if len(compact) >= MAX_EVIDENCE_ITEMS:
             break
-
     return compact
 
-
 def _local_checks(evidence):
-    notes = []
-    conflicts = []
-    gaps = []
-
+    notes, conflicts, gaps = [], [], []
     if not evidence:
         gaps.append("No external or knowledge-base evidence was retrieved.")
         return notes, conflicts, gaps
-
     priced = []
     sources = set()
-
     for item in evidence:
         source = item.get("source", "Unknown")
         sources.add(source)
         price = _normalize_price(item.get("price"))
         if price is not None:
             priced.append((price, source))
-
     if len(sources) == 1:
         notes.append("Evidence currently comes from one source; independent confirmation is recommended.")
-
     if len(priced) >= 2:
         values = {p for p, _ in priced}
         if len(values) > 1:
-            conflicts.append(
-                "Different retrieved records contain different prices; treat price as time-sensitive and verify before purchase."
-            )
-
+            conflicts.append("Different retrieved records contain different prices; treat price as time-sensitive and verify before purchase.")
     return notes, conflicts, gaps
 
+def _clean_messages(values):
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        values = [values]
+    cleaned, seen = [], set()
+    for value in values:
+        if isinstance(value, dict):
+            value = value.get("message") or value.get("text") or json.dumps(value, ensure_ascii=False)
+        value = str(value).strip()
+        if value and value not in seen:
+            seen.add(value)
+            cleaned.append(value)
+    return cleaned
 
 def verify_evidence(query, structured, evidence):
     compact = _compact_evidence(evidence)
     local_notes, local_conflicts, local_gaps = _local_checks(evidence)
     context = json.dumps(compact, ensure_ascii=False)
-
     result = None
     try:
         raw = chat(
@@ -105,7 +97,6 @@ def verify_evidence(query, structured, evidence):
         except json.JSONDecodeError:
             result = None
     except Exception:
-        # A blocked/unreachable LLM must not discard valid live retailer evidence.
         result = None
 
     if not isinstance(result, dict):
@@ -113,41 +104,27 @@ def verify_evidence(query, structured, evidence):
             "verified_claims": [],
             "conflicts": [],
             "gaps": [],
-            "notes": [
-                "AI evidence analysis was unavailable; live retailer records were preserved for comparison."
-            ],
+            "notes": ["AI evidence analysis was unavailable; live retailer records were preserved for comparison."],
         }
 
-    result.setdefault("verified_claims", [])
-    result.setdefault("conflicts", [])
-    result.setdefault("gaps", [])
-    result.setdefault("notes", [])
+    # LLM JSON fields are not guaranteed to have one type. Normalize BEFORE
+    # concatenating with local lists; this prevents: str + list.
+    result["notes"] = _clean_messages(result.get("notes"))
+    result["conflicts"] = _clean_messages(result.get("conflicts"))
+    result["gaps"] = _clean_messages(result.get("gaps"))
 
-    def _clean_messages(values):
-        cleaned = []
-        seen = set()
-        if not isinstance(values, list):
-            values = [values]
-        for value in values:
-            if isinstance(value, dict):
-                value = value.get("message") or value.get("text") or json.dumps(value, ensure_ascii=False)
-            value = str(value).strip()
-            if value and value not in seen:
-                seen.add(value)
-                cleaned.append(value)
-        return cleaned
+    result["verified_claims"] = _clean_messages(result.get("verified_claims"))
 
-    result["notes"] = _clean_messages(result["notes"] + local_notes)
+    result["notes"].extend(local_notes)
+    result["conflicts"].extend(local_conflicts)
+    result["gaps"].extend(local_gaps)
 
     blocked = ("best", "strongest", "stronger choice", "better choice", "recommend")
     result["notes"] = [
         note for note in result["notes"]
         if not any(word in note.lower() for word in blocked)
     ]
-    result["conflicts"] = _clean_messages(result["conflicts"] + local_conflicts)
-    result["gaps"] = _clean_messages(result["gaps"] + local_gaps)
 
-    # Preserve the original live evidence records for downstream agents.
     result["evidence_records"] = [
         item for item in evidence
         if isinstance(item, dict)
