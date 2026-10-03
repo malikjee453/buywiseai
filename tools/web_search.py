@@ -733,6 +733,16 @@ def _search_engine_candidates(source, config, query):
                 f"site:{host} mobile under {budget} PKR",
                 f"site:{host} phone {budget} PKR",
             ])
+        # Generic smartphone searches can return only a few indexed models.
+        # Add brand-specific discovery passes, then let the exact product-page
+        # verifier decide which results are actually valid.
+        for brand in (
+            "Samsung", "Xiaomi", "Redmi", "Infinix", "Tecno", "Vivo",
+            "Oppo", "Realme", "Motorola", "Honor", "OnePlus", "Itel",
+        ):
+            search_queries.append(
+                f"site:{host} {brand} smartphone Pakistan price"
+            )
     elif group == "fashion":
         search_queries.extend([
             f"site:{host} {query} Pakistan price",
