@@ -40,6 +40,8 @@ if result:
     if result.get("comparison"):
         st.markdown("## Comparison")
         render_product_cards(result["comparison"])
+        from ui.components import render_comparison_table
+        render_comparison_table(result["comparison"])
     if result.get("evidence_notes"):
         st.markdown("## Evidence & uncertainty")
         for note in result["evidence_notes"]:
