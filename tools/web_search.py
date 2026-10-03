@@ -679,7 +679,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
     # Dedicated catalog discovery for retailers where the public search
     # endpoint is unreliable. These records still go through normal
     # validation, URL checks, and budget filtering.
-    if len(results) < 3 and source in {"Mega.pk", "Daraz Pakistan"}:
+    if len(results) < 3 and source in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
         results.extend(_dedicated_catalog_candidates(
             source, config, query, budget, limit=6 - len(results)
         ))
