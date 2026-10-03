@@ -6,8 +6,10 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from buywise.schemas import ProductListing, RawSearchResult
 
 PRICE_RE = re.compile(
-    r"(?P<currency>PKR|Rs\.?|USD|US\$|GBP|£|EUR|€|AED|SAR|INR|₹|\$)"
-    r"\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]{1,2})?)",
+    r"(?:(?P<currency>PKR|Rs\.?|USD|US\$|GBP|£|EUR|€|AED|SAR|INR|₹|\$)"
+    r"\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]{1,2})?)"
+    r"|(?P<amount2>[0-9][0-9,]*(?:\.[0-9]{1,2})?)"
+    r"\s*(?P<currency2>PKR|Rs\.?|USD|US\$|GBP|£|EUR|€|AED|SAR|INR|₹|\$))",
     re.IGNORECASE,
 )
 
@@ -58,10 +60,12 @@ def parse_price(
     match = PRICE_RE.search(text)
     if not match:
         return None
-    amount = float(match.group("amount").replace(",", ""))
+    amount_text = match.group("amount") or match.group("amount2")
+    currency_text = match.group("currency") or match.group("currency2")
+    amount = float(amount_text.replace(",", ""))
     currency = CURRENCY_MAP.get(
-        match.group("currency").upper(),
-        match.group("currency").upper(),
+        currency_text.upper(),
+        currency_text.upper(),
     )
     return (amount, currency) if amount > 0 else None
 
@@ -99,7 +103,23 @@ def is_relevant_product(query: str, raw: RawSearchResult) -> tuple[bool, str]:
     specs = [t for t in tokens if re.fullmatch(r"\d+(?:gb|tb|mp|mah)", t)]
     core = [t for t in tokens if t not in specs]
 
-    missing_core = [t for t in core if t not in evidence]
+    # Common shopping-language equivalents. Search engines often return
+    # "women" for girls' fashion, and "female" for women/girls.
+    equivalents = {
+        "girls": {"girls", "girl", "women", "woman", "female", "ladies"},
+        "girl": {"girls", "girl", "women", "woman", "female", "ladies"},
+        "women": {"women", "woman", "female", "ladies", "girls", "girl"},
+        "woman": {"women", "woman", "female", "ladies", "girls", "girl"},
+        "female": {"women", "woman", "female", "ladies", "girls", "girl"},
+        "ladies": {"women", "woman", "female", "ladies", "girls", "girl"},
+    }
+
+    missing_core = []
+    for token in core:
+        acceptable = equivalents.get(token, {token})
+        if not any(term in evidence for term in acceptable):
+            missing_core.append(token)
+
     if missing_core:
         return False, f"missing product terms: {', '.join(missing_core)}"
 
