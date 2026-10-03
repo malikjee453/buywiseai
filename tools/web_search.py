@@ -190,7 +190,7 @@ def _record_from_context(context, source, url):
             "currency": currency,
             "url": url,
             "specs": _extract_specs(context),
-            "price_source": "page_text_context",
+            "price_source": "product_page_text",
         },
     })
 
@@ -413,6 +413,7 @@ def _search_source(source, config, query, budget, group):
                 if detail:
                     detail[0]["metadata"]["title"] = anchor[:120]
                     detail[0]["metadata"]["specs"] = _extract_specs(detail_text)
+                    detail[0]["metadata"]["price_source"] = "product_page_text"
                     detail[0]["text"] = detail_text[:1600]
                     results.extend(detail)
             except Exception:
