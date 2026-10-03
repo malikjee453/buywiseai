@@ -507,79 +507,80 @@ def _price_contexts(html, source, page_url, limit=12):
 
 
 def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
-    """Extract product-card prices only when title and price are tightly associated.
+    """Extract tightly paired product-card prices without requiring flat anchor text.
 
-    This is fallback evidence for retailers that block exact-page fetching. It
-    never scans a large page window, so unrelated tax/installment/shipping
-    amounts cannot become the product price.
+    Retailer cards often wrap product titles in nested spans/images, so matching
+    the concatenated anchor text back into raw HTML is unreliable. Instead,
+    capture each anchor element directly and inspect only its nearby card region.
     """
-    parser = _LinkParser()
-    parser.feed(html)
     results = []
     seen = set()
 
-    for href, anchor in parser.links:
-        if not href or not anchor:
-            continue
-        absolute = urljoin(page_url, href).split("?", 1)[0].rstrip("/")
-        anchor = _clean(unquote(anchor))
+    anchor_pattern = re.compile(
+        r'<a\\b[^>]*?href=["\\\']([^"\\\']+)["\\\'][^>]*>(.*?)</a>',
+        re.I | re.S,
+    )
+
+    for match in anchor_pattern.finditer(html):
+        href, inner = match.group(1), match.group(2)
+        absolute = urljoin(page_url, unquote(href)).split("?", 1)[0].rstrip("/")
         if absolute in seen or not _is_product_url(source, absolute):
             continue
-        if not PRODUCT_WORDS.search(anchor):
+
+        anchor = _clean(unquote(re.sub(r"<[^>]+>", " ", inner)))
+        anchor = re.sub(r"\\s+", " ", anchor).strip()
+        if len(anchor) < 8 or not PRODUCT_WORDS.search(anchor):
             continue
 
-        # Locate this exact anchor in raw HTML and inspect only a small
-        # surrounding region. Product cards normally put their sale/current
-        # price immediately beside the linked product title.
-        positions = [m.start() for m in re.finditer(re.escape(anchor), html, re.I)]
-        if not positions:
-            continue
+        # Inspect the containing card area, not the whole listing page.
+        raw = html[max(0, match.start() - 900):min(len(html), match.end() + 1400)]
+        visible = _clean(unquote(re.sub(r"<[^>]+>", " ", raw)))
+        title_pos = visible.lower().find(anchor[:80].lower())
 
-        best = None
-        for pos in positions[:5]:
-            raw = html[max(0, pos - 300):min(len(html), pos + len(anchor) + 700)]
-            visible = _clean(unquote(re.sub(r"<[^>]+>", " ", raw)))
-            anchor_pos = visible.lower().find(anchor[:60].lower())
-            if anchor_pos < 0:
+        # If nested markup changed the exact text, use the center of the anchor
+        # as the association point.
+        if title_pos < 0:
+            title_pos = min(len(visible) - 1, 900)
+
+        local_prices = []
+        for pm in re.finditer(
+            r"(?:PKR|Rs\\.?)[\\s\\u00a0]*[0-9][0-9,]*(?:\\.\\d+)?",
+            visible,
+            re.I,
+        ):
+            value = _money(pm.group(0))
+            if not value or value < 1000:
                 continue
 
-            local_prices = []
-            for pm in re.finditer(r"(?:PKR|Rs\.?)[\s\u00a0]*[0-9][0-9,]*(?:\.\d+)?", visible, re.I):
-                value = _money(pm.group(0))
-                if not value or value < 1000:
-                    continue
-                distance = abs(pm.start() - anchor_pos)
-                window = visible[max(0, pm.start()-120):min(len(visible), pm.end()+160)].lower()
+            distance = abs(pm.start() - title_pos)
+            window = visible[max(0, pm.start() - 180):min(len(visible), pm.end() + 220)].lower()
 
-                # The price must be associated with this product, not a
-                # monthly payment, tax, shipping fee, deposit, etc.
-                if any(token in window for token in (
-                    "per month", "/month", "monthly", "installment",
-                    "emi", "down payment", "advance payment", "deposit",
-                    "pta tax", "tax:", "tax ", "shipping", "delivery",
-                )):
-                    continue
+            # Reject payment/tax/logistics amounts.
+            if any(token in window for token in (
+                "per month", "/month", "monthly", "installment", "emi",
+                "down payment", "advance payment", "deposit", "pta tax",
+                "tax:", "tax ", "shipping", "delivery", "save rs",
+                "discount", "off rs",
+            )):
+                continue
 
-                score = 1000 - distance
-                if re.search(r"\b(?:price|sale price|our price|current price)\b", window, re.I):
-                    score += 100
-                # Prefer a price after the title, which is the common card layout.
-                if pm.start() >= anchor_pos:
-                    score += 40
-                if budget and value > budget:
-                    score -= 300
-                local_prices.append((score, value))
+            score = 1000 - distance
+            if re.search(r"\\b(?:price|sale price|our price|current price|now)\\b", window, re.I):
+                score += 120
+            if pm.start() >= title_pos:
+                score += 40
+            if budget and value <= budget:
+                score += 80
+            elif budget and value > budget:
+                score -= 250
 
-            if local_prices:
-                local_prices.sort(reverse=True)
-                candidate = local_prices[0]
-                if best is None or candidate[0] > best[0]:
-                    best = candidate
+            local_prices.append((score, value))
 
-        if best is None:
+        if not local_prices:
             continue
 
-        _, value = best
+        local_prices.sort(reverse=True)
+        value = local_prices[0][1]
         if budget and value > budget:
             continue
 
@@ -607,7 +608,6 @@ def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
             break
 
     return results
-
 
 
 def _search_source(source, config, query, budget, group):
