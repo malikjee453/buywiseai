@@ -6,29 +6,74 @@ def render_brand(name, tagline):
 def render_research_form():
     query = st.text_area("What are you looking for?", placeholder="Example: I need a phone under PKR 50,000 with good battery life and camera.", height=110)
     c1, c2, c3 = st.columns(3)
-    with c1: category = st.selectbox("Category", ["Smartphone", "Laptop", "Electronics", "Appliance", "Other"])
-    with c2: budget = st.text_input("Budget (optional)", placeholder="e.g. PKR 50,000")
-    with c3: language = st.selectbox("Answer language", ["English", "Urdu"])
+    with c1:
+        category = st.selectbox("Category", ["Smartphone", "Laptop", "Electronics", "Appliance", "Other"])
+    with c2:
+        budget = st.text_input("Budget (optional)", placeholder="e.g. PKR 50,000")
+    with c3:
+        language = st.selectbox("Answer language", ["English", "Urdu"])
     return query, category, budget, language
 
 def render_product_cards(products):
     if not products:
         st.info("No structured comparison was produced from the available evidence.")
         return
+
     cols = st.columns(min(3, len(products)))
+    labels = {
+        "display": "Display",
+        "performance": "Performance",
+        "battery": "Battery",
+        "camera": "Camera",
+        "storage_ram": "RAM / Storage",
+    }
+
     for i, p in enumerate(products):
         with cols[i % len(cols)]:
-            st.markdown(f"### {p.get('name','Product')}")
-            if p.get("price"): st.write(f"**Price:** {p['price']}")
+            st.markdown(f"### {p.get('name', 'Product')}")
+            st.write(f"**Price:** {p.get('price', 'Not available in evidence')}")
+
+            specs = p.get("key_specs", {})
+            for key, label in labels.items():
+                st.write(f"**{label}:** {specs.get(key, 'Not available in evidence')}")
+
             if p.get("strengths"):
                 st.write("**Strengths**")
-                for x in p["strengths"]: st.write(f"• {x}")
+                for x in p["strengths"]:
+                    st.write(f"• {x}")
+
             if p.get("tradeoffs"):
                 st.write("**Trade-offs**")
-                for x in p["tradeoffs"]: st.write(f"• {x}")
-            if p.get("evidence_status"): st.caption(f"Evidence: {p['evidence_status']}")
+                for x in p["tradeoffs"]:
+                    st.write(f"• {x}")
+
+            if p.get("requirement_fit"):
+                st.write("**Requirement fit**")
+                for x in p["requirement_fit"]:
+                    st.write(f"• {x}")
+
+            if p.get("evidence_status"):
+                st.caption(f"Evidence: {p['evidence_status']}")
 
 def render_sources(sources):
     st.markdown("## Sources")
+    seen = set()
     for s in sources:
-        st.markdown(f'<div class="source-card"><b>{s["title"]}</b><br>{s["source"]} · {s["type"]}</div>', unsafe_allow_html=True)
+        key = (s.get("title"), s.get("source"))
+        if key in seen:
+            continue
+        seen.add(key)
+        url = s.get("url")
+        if url:
+            st.markdown(
+                f'<div class="source-card"><b>{s["title"]}</b><br>'
+                f'{s["source"]} · {s["type"]}<br>'
+                f'<a href="{url}" target="_blank">Open source</a></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f'<div class="source-card"><b>{s["title"]}</b><br>'
+                f'{s["source"]} · {s["type"]}</div>',
+                unsafe_allow_html=True,
+            )
