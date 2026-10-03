@@ -984,7 +984,10 @@ def _search_source_with_fallback(source, config, query, budget, group):
 
     # Retailer-specific discovery is a secondary path used to find products
     # that search engines did not expose.
-    if len(results) < 3:
+    # Google/Bing is the primary discovery path, but do not let a
+    # blocked/empty search-engine response eliminate retailer coverage.
+    # Continue to the retailer discovery path until we have a useful set.
+    if len(results) < 6:
         if source in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
             results.extend(
                 _dedicated_catalog_candidates(
@@ -993,7 +996,8 @@ def _search_source_with_fallback(source, config, query, budget, group):
             )
         else:
             results.extend(
-                _search_source(source, config, query, budget, group)
+                _search_source(source, config, query, budget, group
+                )
             )
 
     if not results:
