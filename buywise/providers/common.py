@@ -141,7 +141,17 @@ def is_relevant_product(query: str, raw: RawSearchResult) -> tuple[bool, str]:
 
 def raw_to_listing(raw: RawSearchResult) -> ProductListing | None:
     url = normalize_url(raw.url)
-    parsed = parse_price(raw.price_text, raw.snippet, raw.title)
+    # For ordinary web/marketplace discovery, a snippet can contain many
+    # unrelated prices. Accept it only when the snippet explicitly labels the
+    # amount as a product price.
+    price_source = raw.price_text
+    if not price_source and raw.snippet:
+        snippet_lower = raw.snippet.lower()
+        if not re.search(r"(price|rs\.?|pkr|\$|usd|gbp|eur|aed|sar|inr|₹)", snippet_lower):
+            return None
+        price_source = raw.snippet
+
+    parsed = parse_price(price_source, "", raw.title)
     if not url or not parsed:
         return None
 
