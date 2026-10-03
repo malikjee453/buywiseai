@@ -94,12 +94,16 @@ def build_comparison(query, structured, evidence):
     if not evidence:
         return []
 
+    # Use the original source records preserved by the Evidence Agent.
+    # This keeps real marketplace names and URLs available downstream.
+    source_records = evidence.get("evidence_records", []) if isinstance(evidence, dict) else evidence
+
     # Only live-web records can become purchasable comparison products.
     # Knowledge-base and demonstration records are never treated as real products.
     compact = []
     seen = set()
 
-    for item in evidence:
+    for item in source_records:
         if not isinstance(item, dict) or not _is_real_live_record({
             "source_type": item.get("source_type"),
             "source": item.get("source"),
