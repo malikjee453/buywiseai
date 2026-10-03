@@ -11,9 +11,9 @@ SHOPPING_CATEGORIES: dict[str, dict[str, list[str]]] = {
         "Video Games & Consoles": ["playstation", "ps5", "xbox", "nintendo", "switch", "gaming console", "video game", "controller"],
     },
     "Fashion & Apparel": {
-        "Women's Clothing": ["women", "women's", "dress", "top", "jeans", "activewear", "swimwear", "outerwear"],
+        "Women's Clothing": ["women", "women's", "girl", "girls", "dress", "top", "jeans", "activewear", "swimwear", "outerwear", "shalwar", "kameez", "kurta", "shalwar kameez"],
         "Men's Clothing": ["men", "men's", "shirt", "pants", "suit", "jacket", "underwear"],
-        "Kids & Baby Apparel": ["kids", "children", "baby clothes", "newborn", "toddler", "teen clothing"],
+        "Kids & Baby Apparel": ["kids", "children", "baby clothes", "newborn", "toddler", "teen clothing", "girls clothing", "boys clothing"],
         "Shoes": ["shoes", "sneakers", "boots", "heels", "sandals", "athletic footwear"],
         "Jewelry & Watches": ["jewelry", "ring", "necklace", "earrings", "watch", "smart band"],
         "Accessories": ["handbag", "wallet", "belt", "hat", "sunglasses", "scarf"],
