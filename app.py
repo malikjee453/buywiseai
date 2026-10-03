@@ -90,7 +90,6 @@ if st.button("🔎 Search products", type="primary"):
                     st.write(f"Raw results received: {len(raw_results)}")
                     st.json([item.model_dump() for item in raw_results[:100]])
 
-excepted = False
 
 try:
     get_llm()
