@@ -89,9 +89,42 @@ def _extract_specs(text):
             specs[key] = value
     return specs
 
+def _is_product_url(source, url):
+    """Return True only for URLs that look like individual product pages."""
+    path = url.split("?", 1)[0].lower().rstrip("/")
+    if not path:
+        return False
+
+    if re.search(r"/(product|item|p|dp|products|mobiles)/[^/]+", path, re.I):
+        return True
+
+    if "telemart.pk" in path and "/products/" in path:
+        return True
+
+    if "ishopping.pk" in path:
+        blocked = (
+            "/mobiles", "/electronics", "/category", "/catalogsearch",
+            "/search", "/customer", "/checkout", "/cart", "/blog",
+            "/sale", "/brands", "/pre-owned", "/accessories",
+        )
+        if any(path.endswith(item) or item + "/" in path for item in blocked):
+            return False
+        return path.count("/") >= 1
+
+    blocked = (
+        "/search", "/catalogsearch", "/category", "/categories/",
+        "/collection", "/collections/", "/shop", "/cart", "/account",
+        "/checkout", "/blog", "/tag/", "/page/",
+    )
+    if any(item in path for item in blocked):
+        return False
+
+    return False
+
+
 def _record_from_context(context, source, url):
     # Search/category pages are evidence-discovery pages, not product records.
-    if not re.search(r"/(product|item|p/|dp/|mobiles/|products/)[^?]*", url, re.I):
+    if not _is_product_url(source, url):
         return None
 
     price_match = re.search(r"(PKR|Rs\.?|\$)\s*([0-9][0-9,]*(?:\.\d+)?)", context, re.I)
@@ -165,19 +198,10 @@ def _is_relevant_record(record, category="", query=""):
     if not terms:
         return True
 
-    # Product relevance must be determined primarily from the product title.
-    # Looking through the entire page allowed unrelated products (for example,
-    # clothing pages containing the word "phone" in navigation/footer text)
-    # to pass the filter.
-    title_match = any(term in title for term in terms)
-
-    if title_match:
-        return True
-
-    # If a title is unusually generic, allow the record only when the query's
-    # distinctive product terms occur near the beginning of the extracted text.
-    leading_text = text[:500]
-    return any(term in leading_text for term in terms)
+    # For a specific category such as smartphone, the product title is the
+    # authoritative relevance signal. Do not fall back to page/footer text:
+    # retailer navigation can contain unrelated words such as "phone".
+    return any(term in title for term in terms)
 
 class _LinkParser(HTMLParser):
     def __init__(self):
@@ -246,7 +270,7 @@ def _search_source(source, config, query, budget, group):
             combined = anchor + " " + absolute
             if not PRODUCT_WORDS.search(combined):
                 continue
-            if not re.search(r"(product|item|mobile|phone|laptop|shirt|dress|shoe|p/|/dp/|/product|/mobiles/)", absolute, re.I):
+            if not _is_product_url(source, absolute):
                 continue
             seen.add(absolute)
             candidates.append((absolute, anchor))
