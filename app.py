@@ -23,7 +23,7 @@ query = st.text_input(
     placeholder="🔍 Type any product you want to compare...",
 )
 
-if st.button("🔍 Search products", type="primary", use_container_width=False):
+if st.button("🔍 Search products", type="primary", width="content"):
     if not query.strip():
         st.error("Enter a product query.")
     else:
@@ -59,7 +59,7 @@ if st.button("🔍 Search products", type="primary", use_container_width=False):
 
                 st.dataframe(
                     rows,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                     column_config={
                         "Product page": st.column_config.LinkColumn("Product page")
