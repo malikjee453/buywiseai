@@ -24,18 +24,17 @@ def run_buywise(query, category="", budget="", language="English"):
     )
 
     web_evidence = search_web(search_text)
-    product_evidence = search_products(
-        search_text,
-        structured.get("category", "")
-    )
-    price_evidence = search_prices(search_text, "PKR")
 
-    retrieved = (
-        local_evidence
-        + web_evidence
-        + product_evidence
-        + price_evidence
-    )
+    # Reuse the same live records instead of fetching the shopping site
+    # three separate times for web, product, and price evidence.
+    product_evidence = web_evidence
+    price_evidence = [
+        item for item in web_evidence
+        if item.get("price")
+        and item.get("metadata", {}).get("currency") == "PKR"
+    ]
+
+    retrieved = local_evidence + web_evidence
 
     evidence = verify_evidence(query, structured, retrieved)
     comparison = build_comparison(query, structured, evidence)
