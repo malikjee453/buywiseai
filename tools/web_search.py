@@ -423,29 +423,56 @@ def _price_contexts(html, source, page_url, limit=12):
     return results
 
 def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
-    """Extract product evidence directly from a retailer listing/search page."""
+    """Extract product evidence from listing HTML without relying on anchor text lookup."""
     parser = _LinkParser()
     parser.feed(html)
     results = []
     seen = set()
+
+    # Anchor text is often split by nested tags or HTML entities, so searching
+    # raw HTML for the rendered title is unreliable. Locate the href instead.
+    href_positions = {}
     for href, anchor in parser.links:
         absolute = urljoin(page_url, href)
-        anchor = _clean(anchor)
+        absolute = absolute.split("?", 1)[0].rstrip("/")
         if not anchor or absolute in seen or not _is_product_url(source, absolute):
             continue
         if not PRODUCT_WORDS.search(anchor):
             continue
+        href_positions.setdefault(href, (absolute, _clean(anchor)))
+
+    for raw_href, (absolute, anchor) in href_positions.items():
         seen.add(absolute)
-        # Find a short price/spec context around the product title in page text.
-        record = _record_from_context(anchor + " " + html[max(0, html.find(anchor)-500):html.find(anchor)+1200], source, absolute)
+        escaped_href = re.escape(raw_href)
+        match = re.search(r'href\\s*=\\s*["\\']' + escaped_href + r'["\\']', html, re.I)
+        if not match:
+            # Some pages normalize/encode the href. Try the absolute URL too.
+            match = re.search(re.escape(absolute), html, re.I)
+        if not match:
+            continue
+
+        start = max(0, match.start() - 2500)
+        end = min(len(html), match.end() + 2500)
+        raw_context = html[start:end]
+        visible_context = re.sub(r"<[^>]+>", " ", raw_context)
+        visible_context = _clean(unquote(visible_context))
+
+        # Put the exact product title first so _record_from_context uses it
+        # rather than navigation text from the surrounding card.
+        context = anchor + " " + visible_context
+        record = _record_from_context(context, source, absolute)
         if record:
             price = _money(record.get("price"))
             if budget and price and price > budget:
                 continue
             record["metadata"]["title"] = anchor[:120]
+            record["metadata"]["url"] = absolute
+            record["metadata"]["price_source"] = "listing_page_text"
+            record["metadata"]["listing_verified"] = True
             results.append(record)
         if len(results) >= limit:
             break
+
     return results
 
 
