@@ -713,10 +713,41 @@ def _search_engine_candidates(source, config, query):
     separate from retailer-page scraping.
     """
     host = config["base"].split("//", 1)[-1].replace("www.", "")
+    # Use several independent discovery queries. Retailer search pages are
+    # often incomplete, so one exact query can miss valid products even when
+    # the retailer has them indexed.
+    budget = _budget_from_query(query)
+    group = _query_group(query)
     search_queries = [
         f"site:{host} {query} Pakistan price",
         f"site:{host} {query}",
     ]
+    if group == "electronics":
+        search_queries.extend([
+            f"site:{host} smartphone Pakistan price",
+            f"site:{host} mobile phone Pakistan price",
+        ])
+        if budget:
+            search_queries.extend([
+                f"site:{host} smartphone under {budget} PKR",
+                f"site:{host} mobile under {budget} PKR",
+                f"site:{host} phone {budget} PKR",
+            ])
+    elif group == "fashion":
+        search_queries.extend([
+            f"site:{host} {query} Pakistan price",
+            f"site:{host} fashion {query} Pakistan",
+        ])
+    elif group == "home":
+        search_queries.extend([
+            f"site:{host} {query} Pakistan price",
+            f"site:{host} appliance {query} Pakistan",
+        ])
+    else:
+        search_queries.extend([
+            f"site:{host} {query} Pakistan",
+            f"site:{host} {group} {query} Pakistan",
+        ])
     candidates = []
     seen = set()
 
@@ -830,7 +861,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
     if len(catalog_records) < limit:
         for product_url, anchor in _search_engine_candidates(source, config, query):
             add_url(product_url, anchor)
-            if len(discovered) >= limit * 4:
+            if len(discovered) >= limit * 6:
                 break
 
     def verify_detail(item):
@@ -872,7 +903,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
 
     results = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(verify_detail, item) for item in prioritized[:limit * 4]]
+        futures = [pool.submit(verify_detail, item) for item in prioritized[:limit * 6]]
         for future in as_completed(futures):
             results.extend(future.result())
             if len(results) >= limit:
@@ -922,7 +953,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
         for item in results
     }
 
-    fallback_limit = 4 if source in {"Daraz Pakistan", "Shophive", "Mega.pk", "iShopping"} else 5
+    fallback_limit = 8 if source in {"Daraz Pakistan", "Shophive", "Mega.pk", "iShopping"} else 6
     for product_url, anchor in _search_engine_candidates(source, config, query)[:fallback_limit]:
         if product_url in existing_urls:
             continue
