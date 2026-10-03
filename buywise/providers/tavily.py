@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import os
-
 import httpx
 
 from buywise.schemas import RawSearchResult
 from .base import SearchProvider
+from .credentials import get_secret
 
 
 class TavilyProvider(SearchProvider):
@@ -13,7 +12,7 @@ class TavilyProvider(SearchProvider):
     env_var = "TAVILY_API_KEY"
 
     def search(self, query: str, country: str, max_results: int) -> list[RawSearchResult]:
-        key = os.getenv(self.env_var, "").strip()
+        key = get_secret(self.env_var)
         if not key:
             return []
         payload = {"query": f"{query} buy price {country}", "topic": "general", "search_depth": "basic", "max_results": min(max_results, 20), "include_answer": False}
