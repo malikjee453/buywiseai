@@ -1,6 +1,5 @@
 import streamlit as st
 
-from buywise.llm import LLMConfigurationError, get_llm
 from buywise.providers import run_search
 from buywise.schemas import ProductQuery
 
@@ -73,11 +72,3 @@ if st.button("🔎 Search products", type="primary"):
 
         except Exception as exc:
             st.error(f"Search failed: {type(exc).__name__}: {exc}")
-
-
-# Keep Groq initialization available for the next AI recommendation stage,
-# but do not expose configuration/status details in the public interface.
-try:
-    get_llm()
-except LLMConfigurationError:
-    pass
