@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import os
-
 import httpx
 
 from buywise.schemas import RawSearchResult
 from .base import SearchProvider
+from .credentials import get_secret
 
 
 class BraveProvider(SearchProvider):
@@ -13,7 +12,7 @@ class BraveProvider(SearchProvider):
     env_var = "BRAVE_API_KEY"
 
     def search(self, query: str, country: str, max_results: int) -> list[RawSearchResult]:
-        key = os.getenv(self.env_var, "").strip()
+        key = get_secret(self.env_var)
         if not key:
             return []
         country_code = {"Pakistan": "PK", "United States": "US", "United Kingdom": "GB"}.get(country, "US")
