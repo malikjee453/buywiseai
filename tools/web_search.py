@@ -687,7 +687,7 @@ def search_web(query, category=""):
     # to appear, while round-robin prevents one retailer from taking over.
     priority_order = {
         name: index for index, name in enumerate(
-            PRIMARY_PK_SOURCES + SECONDARY_PK_SOURCES + INTERNATIONAL_SOURCES
+            list(PRIMARY_PK_SOURCES) + list(SECONDARY_PK_SOURCES) + list(INTERNATIONAL_SOURCES)
         )
     }
     by_source = {}
