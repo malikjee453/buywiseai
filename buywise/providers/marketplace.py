@@ -26,13 +26,13 @@ class MarketplaceProvider(SearchProvider):
         # Do not require price words in the search query. Many stores expose
         # the price only in structured metadata/snippets, while their indexed
         # page title contains the product terms.
-        search_query = f'site:{domain} {query} Pakistan'
+        search_query = f'site:{domain} "{query}" Pakistan ("Rs" OR "PKR" OR "price")'
 
         with DDGS(timeout=8) as ddgs:
             items = ddgs.text(
                 search_query,
                 region="pk-en",
-                max_results=max(2, min(max_results, 4)),
+                max_results=max(3, min(max_results, 5)),
             )
 
         return [
