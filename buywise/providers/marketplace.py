@@ -23,43 +23,41 @@ class MarketplaceProvider(SearchProvider):
         query: str,
         max_results: int,
     ) -> list[RawSearchResult]:
-        # Avoid forcing "Pakistan" into every site query; it hides many
-        # valid indexed product pages.
-        queries = [
-            f"site:{domain} {query}",
-            f"site:{domain} {query} price",
-        ]
+        """Run one fast site-targeted discovery request.
 
-        for search_query in queries:
-            for region, backend in (("pk-en", "auto"), ("wt-wt", "bing")):
-                try:
-                    with DDGS(timeout=5) as ddgs:
-                        items = ddgs.text(
-                            search_query,
-                            region=region,
-                            backend=backend,
-                            max_results=min(max_results, 5),
-                        )
+        One request per platform is intentional: BuyWiseAI needs diversity
+        across shopping websites, not many results from the same website.
+        """
+        search_query = f"site:{domain} {query} price"
 
-                    if not items:
-                        continue
+        try:
+            with DDGS(timeout=3) as ddgs:
+                items = ddgs.text(
+                    search_query,
+                    region="pk-en",
+                    backend="auto",
+                    max_results=min(max_results, 3),
+                )
 
-                    return [
-                        RawSearchResult(
-                            title=str(item.get("title", "")),
-                            url=str(item.get("href", "")),
-                            snippet=str(item.get("body", "")),
-                            source=platform,
-                            provider=self.name,
-                            raw_data=item,
-                        )
-                        for item in items
-                        if item.get("href")
-                    ]
-                except Exception:
-                    continue
+            if not items:
+                return []
 
-        return []
+            return [
+                RawSearchResult(
+                    title=str(item.get("title", "")),
+                    url=str(item.get("href", "")),
+                    snippet=str(item.get("body", "")),
+                    source=platform,
+                    provider=self.name,
+                    raw_data=item,
+                )
+                for item in items
+                if item.get("href")
+            ]
+        except Exception:
+            # A single store/search-engine failure must never block the
+            # remaining platforms.
+            return []
 
     def search(
         self,
@@ -74,7 +72,7 @@ class MarketplaceProvider(SearchProvider):
         results: list[RawSearchResult] = []
 
         with ThreadPoolExecutor(
-            max_workers=min(10, len(platforms)),
+            max_workers=min(15, len(platforms)),
             thread_name_prefix="buywise-platform",
         ) as pool:
             futures = {
