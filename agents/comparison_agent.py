@@ -1,18 +1,15 @@
 import re
 
-
 def _is_real_live_record(record):
     source_type = str(record.get("source_type", "")).lower()
     source = str(record.get("source", "")).lower()
     return source_type == "live_web" and source not in {"demo", "demonstration"}
-
 
 def _clean(value, fallback="Not available in evidence"):
     if value is None:
         return fallback
     value = str(value).strip()
     return value or fallback
-
 
 def _display_name(metadata, source):
     title = _clean(metadata.get("title"), "")
@@ -23,7 +20,6 @@ def _display_name(metadata, source):
     title = re.sub(r"\s+Rs\s+[\d,]+(?:\s+Rs\s+[\d,]+)?\s+\d+%\s+OFF.*$", "", title, flags=re.I)
     title = re.sub(r"\s+PKR\s+[\d,]+.*$", "", title, flags=re.I)
     return title.strip()[:120] or _clean(source, "Product")
-
 
 def _record_to_product(item):
     metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
@@ -38,6 +34,10 @@ def _record_to_product(item):
     specs_verified = bool(verification.get("specs_verified"))
     status = str(verification.get("status", "insufficient"))
 
+    # Final Step 5 gate: listing/category-card prices are discovery evidence only.
+    if not price_verified:
+        return None
+
     return {
         "name": _display_name(metadata, source),
         "price": _clean(item.get("price")),
@@ -46,11 +46,16 @@ def _record_to_product(item):
             "performance": "Not available in evidence",
             "battery": _clean(specs.get("battery")),
             "camera": _clean(specs.get("camera")),
-            "storage_ram": _clean(" / ".join(value for value in (_clean(specs.get("storage"), ""), _clean(specs.get("ram"), "")) if value), "Not available in evidence"),
+            "storage_ram": _clean(" / ".join(
+                value for value in (
+                    _clean(specs.get("storage"), ""),
+                    _clean(specs.get("ram"), ""),
+                ) if value
+            ), "Not available in evidence"),
         },
         "verification": {
             "status": status,
-            "price_verified": price_verified,
+            "price_verified": True,
             "specs_verified": specs_verified,
             "variant_identified": bool(checks.get("variant_identified")),
         },
@@ -61,7 +66,6 @@ def _record_to_product(item):
         "product_url": url,
         "availability": [{"source": source, "url": url}],
     }
-
 
 def build_comparison(query, structured, evidence):
     if not isinstance(evidence, dict):
