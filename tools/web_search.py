@@ -444,7 +444,7 @@ def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
     for raw_href, (absolute, anchor) in href_positions.items():
         seen.add(absolute)
         escaped_href = re.escape(raw_href)
-        match = re.search(r'href\\s*=\\s*["\\']' + escaped_href + r'["\\']', html, re.I)
+        match = re.search(r"""href\s*=\s*["']""" + escaped_href + r"""["']""", html, re.I)
         if not match:
             # Some pages normalize/encode the href. Try the absolute URL too.
             match = re.search(re.escape(absolute), html, re.I)
