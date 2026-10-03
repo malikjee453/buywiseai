@@ -119,7 +119,7 @@ def build_comparison(query, structured, evidence):
             "source": str(item.get("source", "Unknown")),
             "price": str(item.get("price", "not extracted")),
             "specs": metadata.get("specs", {}),
-            "evidence": str(item.get("text", ""))[:350],
+            "evidence": str(item.get("text", ""))[:180],
             "url": str(metadata.get("url", "")),
         }
 
@@ -129,7 +129,7 @@ def build_comparison(query, structured, evidence):
         seen.add(key)
         compact.append(record)
 
-        if len(compact) >= 10:
+        if len(compact) >= 6:
             break
 
     raw = chat(
