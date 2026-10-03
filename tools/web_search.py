@@ -185,6 +185,16 @@ def _is_product_url(source, url):
         blocked = ("/catalogsearch", "/search", "/category", "/categories", "/customer", "/checkout", "/cart", "/blog")
         if any(item in path for item in blocked):
             return False
+        # Shophive exposes brand/category landing pages such as
+        # /mobile-phones/vivo. These are not individual products.
+        slug = path.rsplit("/", 1)[-1]
+        generic_brand_pages = {
+            "apple", "samsung", "xiaomi", "redmi", "vivo", "oppo", "tecno",
+            "infinix", "realme", "motorola", "honor", "oneplus", "google",
+            "pixel", "itel", "nokia", "dcode", "sparx", "xmobile",
+        }
+        if slug in generic_brand_pages:
+            return False
         return "/mobile-phones/" in path or "/laptops/" in path or "/tablets/" in path or path.endswith(".html")
     if source == "iShopping":
         blocked = ("/category", "/catalogsearch", "/search", "/customer", "/checkout", "/cart", "/blog", "/sale", "/brands", "/pre-owned", "/accessories")
