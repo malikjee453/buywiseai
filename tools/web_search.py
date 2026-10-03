@@ -4,6 +4,7 @@ from urllib.parse import quote_plus, urljoin
 from urllib.request import Request, urlopen
 import re
 import json
+from tools.product_validator import validate_record
 
 # Supported shopping sources. A source is only returned when BuyWise can
 # actually retrieve a product/listing record from it; no URL or product is invented.
@@ -178,7 +179,7 @@ def _record_from_context(context, source, url):
     if len(title) < 8 or not PRODUCT_WORDS.search(title):
         return None
 
-    return {
+    return validate_record({
         "text": context[:900],
         "source": source,
         "source_type": "live_web",
@@ -189,8 +190,9 @@ def _record_from_context(context, source, url):
             "currency": currency,
             "url": url,
             "specs": _extract_specs(context),
+            "price_source": "page_text_context",
         },
-    }
+    })
 
 CATEGORY_TERMS = {
     "smartphone": ("phone", "smartphone", "mobile", "iphone", "galaxy", "redmi", "vivo", "oppo", "tecno", "infinix", "xiaomi", "realme", "motorola", "honor", "oneplus", "pixel", "itel", "nokia", "dcode", "sparx", "xmobile"),
@@ -336,7 +338,7 @@ def _jsonld_product_records(html, source, page_url):
                 continue
             seen.add(key)
 
-            results.append({
+            results.append(validate_record({
                 "text": name,
                 "source": source,
                 "source_type": "live_web",
@@ -347,6 +349,7 @@ def _jsonld_product_records(html, source, page_url):
                     "currency": currency,
                     "url": product_url,
                     "specs": {},
+                    "price_source": "jsonld_product_offer",
                 },
             })
 
@@ -604,6 +607,6 @@ def search_web(query, category=""):
             if round_index < len(source_items):
                 balanced.append(source_items[round_index])
                 if len(balanced) >= 30:
-                    return balanced
+                    return [validate_record(item) for item in balanced]
 
     return balanced
