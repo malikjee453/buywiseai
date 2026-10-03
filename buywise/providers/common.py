@@ -14,21 +14,17 @@ PRICE_RE = re.compile(
 CURRENCY_MAP = {
     "PKR": "PKR", "RS": "PKR", "RS.": "PKR",
     "USD": "USD", "US$": "USD", "$": "USD",
-    "GBP": "GBP", "£": "GBP",
-    "EUR": "EUR", "€": "EUR",
-    "AED": "AED", "SAR": "SAR",
-    "INR": "INR", "₹": "INR",
+    "GBP": "GBP", "£": "GBP", "EUR": "EUR", "€": "EUR",
+    "AED": "AED", "SAR": "SAR", "INR": "INR", "₹": "INR",
 }
 
 TRACKING_KEYS = {
-    "gclid", "fbclid", "ref", "ref_", "tag", "affid",
-    "affiliate", "utm_source", "utm_medium", "utm_campaign",
-    "utm_term", "utm_content",
+    "gclid", "fbclid", "ref", "ref_", "tag", "affid", "affiliate",
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
 }
 
 
 def normalize_url(url: str) -> str:
-    """Remove fragments and common tracking parameters."""
     if not url:
         return ""
     try:
@@ -39,13 +35,8 @@ def normalize_url(url: str) -> str:
             if k.lower() not in TRACKING_KEYS and not k.lower().startswith("utm_")
         ]
         return urlunsplit(
-            (
-                parts.scheme.lower(),
-                parts.netloc.lower(),
-                parts.path.rstrip("/"),
-                urlencode(query),
-                "",
-            )
+            (parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"),
+             urlencode(query), "")
         )
     except ValueError:
         return url.strip()
@@ -63,68 +54,76 @@ def parse_price(
     snippet: str = "",
     title: str = "",
 ) -> tuple[float, str] | None:
-    """Parse a price only when currency evidence is present."""
-    text = " ".join(
-        x for x in [price_text or "", snippet or "", title or ""] if x
-    ).strip()
+    text = " ".join(x for x in [price_text or "", snippet or "", title or ""] if x)
     match = PRICE_RE.search(text)
     if not match:
         return None
-
     amount = float(match.group("amount").replace(",", ""))
     currency = CURRENCY_MAP.get(
         match.group("currency").upper(),
         match.group("currency").upper(),
     )
-    if amount <= 0:
-        return None
-    return amount, currency
+    return (amount, currency) if amount > 0 else None
 
 
-def _normal_tokens(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", text.lower())
+def _normal(text: str) -> str:
+    text = text.lower().replace("-", " ")
+    text = re.sub(r"(\d+)\s*gb\b", r"\1gb", text)
+    text = re.sub(r"(\d+)\s*tb\b", r"\1tb", text)
+    return " ".join(re.findall(r"[a-z0-9]+", text))
 
 
-def query_requirements(query: str) -> tuple[list[str], list[str]]:
-    """
-    Return product/spec tokens and ignored generic shopping words.
-
-    Storage tokens such as 128GB are preserved as exact requirements.
-    """
-    tokens = _normal_tokens(query)
-    ignored = {
-        "price", "prices", "buy", "online", "cheap", "best",
-        "deal", "deals", "in", "pakistan", "pk", "for",
-    }
-    required = [token for token in tokens if token not in ignored]
-    return required, tokens
+def _evidence(raw: RawSearchResult) -> str:
+    # Include URL and raw provider data because marketplace URLs often carry
+    # the exact SKU/spec even when the search snippet does not.
+    raw_blob = " ".join(str(v) for v in raw.raw_data.values())
+    return _normal(" ".join([raw.title, raw.snippet, raw.url, raw_blob]))
 
 
 def is_relevant_product(query: str, raw: RawSearchResult) -> tuple[bool, str]:
     """
-    Conservative relevance check. Every meaningful query token must occur in the
-    title/snippet, preventing a generic iPhone 15 page from passing an iPhone
-    15 128GB request.
+    Conservative two-stage matcher:
+    - core product/model tokens must match
+    - requested specs must be evidenced somewhere in title/snippet/URL/provider data
+    - explicit conflicting capacity is rejected
     """
-    required, _ = query_requirements(query)
-    evidence = f"{raw.title} {raw.snippet}".lower()
+    tokens = _normal(query).split()
+    ignored = {
+        "price", "prices", "buy", "online", "cheap", "best", "deal",
+        "deals", "in", "pakistan", "pk", "for",
+    }
+    tokens = [t for t in tokens if t not in ignored]
+    evidence = _evidence(raw)
 
-    missing = [token for token in required if token not in evidence]
-    if missing:
-        return False, f"missing query terms: {', '.join(missing)}"
+    # Capacity/spec tokens.
+    specs = [t for t in tokens if re.fullmatch(r"\d+(?:gb|tb|mp|mah)", t)]
+    core = [t for t in tokens if t not in specs]
 
-    return True, "query terms matched"
+    missing_core = [t for t in core if t not in evidence]
+    if missing_core:
+        return False, f"missing product terms: {', '.join(missing_core)}"
+
+    for spec in specs:
+        if spec not in evidence:
+            return False, f"missing requested specification: {spec}"
+
+        # Do not accept an explicitly different capacity when the requested
+        # capacity is present.
+        if spec.endswith(("gb", "tb")):
+            capacities = re.findall(r"\b\d+(?:gb|tb)\b", evidence)
+            if capacities and spec not in capacities:
+                return False, f"conflicting capacity: {', '.join(sorted(set(capacities)))}"
+
+    return True, "product and requested specifications matched"
 
 
 def raw_to_listing(raw: RawSearchResult) -> ProductListing | None:
-    """Convert a provider result into a strict priced listing."""
     url = normalize_url(raw.url)
     parsed = parse_price(raw.price_text, raw.snippet, raw.title)
     if not url or not parsed:
         return None
 
     price, currency = parsed
-
     try:
         return ProductListing(
             title=raw.title.strip(),
