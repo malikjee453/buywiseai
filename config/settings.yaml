@@ -11,10 +11,10 @@ llm:
   max_tokens: 1200
 
 search:
-  max_results_per_provider: 20
-  request_timeout_seconds: 15
+  max_results_per_provider: 10
+  request_timeout_seconds: 8
   max_retries: 2
-  max_rounds: 3
+  max_rounds: 2
   target_results: 10
   min_distinct_sources: 8
   max_results_per_source: 2
