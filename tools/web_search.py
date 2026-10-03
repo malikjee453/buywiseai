@@ -610,6 +610,47 @@ def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
     return results
 
 
+
+def _verified_detail_records(html, source, product_url, detail_text, limit=2):
+    """Extract price evidence from one exact product page only."""
+    records = []
+
+    # Prefer structured Product/Offer data from the exact page.
+    for record in _jsonld_product_records(html, source, product_url):
+        metadata = record.get("metadata", {})
+        metadata["url"] = product_url
+        metadata["price_source"] = "jsonld_product_offer"
+        record["metadata"] = metadata
+        records.append(record)
+        if len(records) >= limit:
+            return records[:limit]
+
+    # Fall back to explicit price text from the same exact product page.
+    for record in _price_contexts(html, source, product_url, limit=limit):
+        metadata = record.get("metadata", {})
+        metadata["url"] = product_url
+        metadata["price_source"] = "product_page_text"
+        record["metadata"] = metadata
+        records.append(record)
+        if len(records) >= limit:
+            break
+
+    # Deduplicate by price/source URL.
+    unique = []
+    seen = set()
+    for record in records:
+        key = (
+            str(record.get("metadata", {}).get("url", "")),
+            str(record.get("price", "")),
+            str(record.get("metadata", {}).get("title", "")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(record)
+
+    return unique[:limit]
+
 def _search_source(source, config, query, budget, group):
     try:
         q = quote_plus(query)
