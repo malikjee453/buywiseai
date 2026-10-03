@@ -46,6 +46,11 @@ def render_comparison_table(products):
         camera = str(specs.get("camera", "Not available"))
         source = str(p.get("source", "Source not available"))
         url = str(p.get("source_url", "")).strip()
+        verification = p.get("verification", {}) if isinstance(p.get("verification"), dict) else {}
+        status = str(verification.get("status", "insufficient")).title()
+        price_verified = bool(verification.get("price_verified"))
+        specs_verified = bool(verification.get("specs_verified"))
+        verification_label = "Verified" if price_verified else ("Partially verified" if status == "Partial" else "Unverified")
 
         if url:
             source_cell = f"[{source}]({url})"
@@ -53,7 +58,7 @@ def render_comparison_table(products):
             source_cell = source
 
         rows.append(
-            f"| {name} | {price} | {battery} | {camera} | {source_cell} |"
+            f"| {name} | {price} | {battery} | {camera} | {verification_label} | {source_cell} |"
         )
 
     st.markdown(
