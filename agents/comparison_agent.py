@@ -1,166 +1,135 @@
-import json
 import re
-from core.llm import chat
-from core.prompts import COMPARISON_PROMPT
 
-REQUIRED_FIELDS = (
-    "display",
-    "performance",
-    "battery",
-    "camera",
-    "storage_ram",
-)
-
-def _clean_value(value):
-    if value is None:
-        return "Not available in evidence"
-    value = str(value).strip()
-    return value or "Not available in evidence"
-
-def _normalize_product(product):
-    if not isinstance(product, dict):
-        return None
-
-    name = _clean_value(product.get("name"))
-    if name == "Not available in evidence":
-        return None
-
-    specs = product.get("key_specs")
-    if not isinstance(specs, dict):
-        specs = {}
-
-    strengths = product.get("strengths")
-    tradeoffs = product.get("tradeoffs")
-    fit = product.get("requirement_fit")
-
-    return {
-        "name": name,
-        "price": _clean_value(product.get("price")),
-        "key_specs": {
-            field: _clean_value(specs.get(field))
-            for field in REQUIRED_FIELDS
-        },
-        "strengths": (
-            [str(x).strip() for x in strengths if str(x).strip()]
-            if isinstance(strengths, list) else []
-        ),
-        "tradeoffs": (
-            [str(x).strip() for x in tradeoffs if str(x).strip()]
-            if isinstance(tradeoffs, list) else []
-        ),
-        "requirement_fit": (
-            [str(x).strip() for x in fit if str(x).strip()]
-            if isinstance(fit, list) else []
-        ),
-        "evidence_status": _clean_value(product.get("evidence_status")),
-        "source": _clean_value(product.get("source")),
-        "source_url": _clean_value(product.get("source_url")),
-    }
 
 def _is_real_live_record(record):
     source_type = str(record.get("source_type", "")).lower()
     source = str(record.get("source", "")).lower()
     return source_type == "live_web" and source not in {"demo", "demonstration"}
 
-def _attach_source_links(products, compact):
-    """Attach only URLs actually supplied by retrieved evidence."""
-    enriched = []
-    for product in products:
-        name = product.get("name", "").casefold()
-        name_tokens = set(re.findall(r"[a-z0-9]+", name))
-        links = []
-        seen = set()
-        for record in compact:
-            title = record.get("title", "").casefold()
-            title_tokens = set(re.findall(r"[a-z0-9]+", title))
-            if not name or not title:
-                continue
-            if name in title or title in name or len(name_tokens & title_tokens) >= 2:
-                url = record.get("url", "")
-                if url and url not in seen:
-                    links.append({"source": record.get("source", "Source"), "url": url})
-                    seen.add(url)
-        supplied = product.get("source_url", "")
-        exact = next((x for x in links if x["url"] == supplied), None)
-        if exact:
-            links = [exact] + [x for x in links if x["url"] != supplied]
-        product["availability"] = links
-        product["source"] = links[0]["source"] if links else "Source not available"
-        product["source_url"] = links[0]["url"] if links else ""
-        enriched.append(product)
-    return enriched
+
+def _clean(value, fallback="Not available in evidence"):
+    if value is None:
+        return fallback
+    value = str(value).strip()
+    return value or fallback
+
+
+def _display_name(metadata, source):
+    title = _clean(metadata.get("title"), "")
+    if not title:
+        return _clean(source, "Product")
+    # Search snippets can contain long navigation text. Keep the first useful
+    # product-looking phrase without inventing a name.
+    title = re.sub(r"\\s+", " ", title).strip()
+    return title[:120]
+
+
+def _record_to_product(item):
+    metadata = item.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    url = _clean(metadata.get("url"), "")
+    source = _clean(item.get("source"), "")
+    if not url or not source:
+        return None
+
+    specs = metadata.get("specs")
+    if not isinstance(specs, dict):
+        specs = {}
+
+    return {
+        "name": _display_name(metadata, source),
+        "price": _clean(item.get("price")),
+        "key_specs": {
+            "display": _clean(specs.get("display")),
+            "performance": "Not available in evidence",
+            "battery": _clean(specs.get("battery")),
+            "camera": _clean(specs.get("camera")),
+            "storage_ram": _clean(
+                " / ".join(
+                    value for value in (
+                        _clean(specs.get("storage"), ""),
+                        _clean(specs.get("ram"), ""),
+                    )
+                    if value
+                ),
+                "Not available in evidence",
+            ),
+        },
+        "strengths": [],
+        "tradeoffs": [],
+        "requirement_fit": [],
+        "evidence_status": "Retrieved from live web evidence",
+        "source": source,
+        "source_url": url,
+        "availability": [{"source": source, "url": url}],
+    }
+
 
 def build_comparison(query, structured, evidence):
-    if not evidence:
+    """
+    Build the buyer-facing table deterministically from verified live records.
+
+    The previous version sent all candidate products to the LLM and asked it
+    to choose the output. That allowed the model to return only 3 products
+    even when 10+ live records had been retrieved, and it could also hit the
+    Groq token limit. The buyer table must preserve retrieved products exactly,
+    so no LLM selection is needed here.
+    """
+    if not isinstance(evidence, dict):
         return []
 
-    # Use the original source records preserved by the Evidence Agent.
-    # This keeps real marketplace names and URLs available downstream.
-    source_records = evidence.get("evidence_records", []) if isinstance(evidence, dict) else evidence
+    source_records = evidence.get("evidence_records", [])
+    if not isinstance(source_records, list):
+        return []
 
-    # Only live-web records can become purchasable comparison products.
-    # Knowledge-base and demonstration records are never treated as real products.
-    compact = []
-    seen = set()
+    candidates = []
+    seen_urls = set()
 
     for item in source_records:
-        if not isinstance(item, dict) or not _is_real_live_record({
-            "source_type": item.get("source_type"),
-            "source": item.get("source"),
-        }):
+        if not isinstance(item, dict) or not _is_real_live_record(item):
             continue
 
         metadata = item.get("metadata")
         if not isinstance(metadata, dict):
             metadata = {}
 
-        record = {
-            "title": str(metadata.get("title") or item.get("source", "Product"))[:120],
-            "source": str(item.get("source", "Unknown")),
-            "price": str(item.get("price", "not extracted")),
-            "specs": metadata.get("specs", {}),
-            "evidence": str(item.get("text", ""))[:180],
-            "url": str(metadata.get("url", "")),
-        }
-
-        key = (record["source"], record["title"], record["price"])
-        if key in seen:
+        url = str(metadata.get("url", "")).strip()
+        if not url or url in seen_urls:
             continue
-        seen.add(key)
-        compact.append(record)
 
-        if len(compact) >= 15:
+        product = _record_to_product(item)
+        if not product:
+            continue
+
+        seen_urls.add(url)
+        candidates.append(product)
+
+    # Preserve source diversity: take up to 3 products from each source first.
+    # Then fill remaining slots from unused products. This targets 12 products
+    # while never fabricating a source or URL.
+    selected = []
+    selected_urls = set()
+    source_counts = {}
+
+    for product in candidates:
+        source = product["source"]
+        if source_counts.get(source, 0) >= 3:
+            continue
+        selected.append(product)
+        selected_urls.add(product["source_url"])
+        source_counts[source] = source_counts.get(source, 0) + 1
+        if len(selected) >= 12:
             break
 
-    raw = chat(
-        COMPARISON_PROMPT,
-        f"Request: {query}\n"
-        f"Requirements: {json.dumps(structured, ensure_ascii=False)}\n"
-        f"Evidence records: {json.dumps(compact, ensure_ascii=False)}"
-    )
+    if len(selected) < 12:
+        for product in candidates:
+            if product["source_url"] in selected_urls:
+                continue
+            selected.append(product)
+            selected_urls.add(product["source_url"])
+            if len(selected) >= 12:
+                break
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return []
-
-    products = data.get("products", [])
-    if not isinstance(products, list):
-        return []
-
-    cleaned = []
-    seen = set()
-
-    for product in products:
-        normalized = _normalize_product(product)
-        if not normalized:
-            continue
-
-        key = normalized["name"].casefold()
-        if key in seen:
-            continue
-
-        seen.add(key)
-        cleaned.append(normalized)
-
-    return _attach_source_links(cleaned, compact)
+    return selected
