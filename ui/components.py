@@ -21,7 +21,7 @@ def render_research_form():
     with c1:
         category = st.selectbox(
             "Category",
-            ["Smartphone", "Laptop", "Electronics", "Appliance", "Other"],
+            ["Auto-detect", "Smartphone", "Laptop", "Electronics", "Appliance", "Fashion", "Other"],
         )
     with c2:
         budget = st.text_input(
@@ -31,9 +31,11 @@ def render_research_form():
         language = st.selectbox(
             "Answer language", ["English", "Urdu"]
         )
+    if category == "Auto-detect":
+        category = ""
     return query, category, budget, language
 
-def render_comparison_table(products):
+def render_comparison_table(products, category=""):
     if not products:
         return
 
@@ -53,7 +55,7 @@ def render_comparison_table(products):
         rows.append(f"| {name} | {price} | {battery} | {camera} | {verification_label} | {source_cell} |")
 
     st.markdown(
-        "| Smartphone | Price (PKR) | Battery | Camera | Verification | Source / Product Page |\n"
+        f"| {category or 'Product'} | Price (PKR) | Battery | Camera | Verification | Source / Product Page |\n"
         "|---|---:|---|---:|---|---|\n"
         + "\n".join(rows),
         unsafe_allow_html=True,
