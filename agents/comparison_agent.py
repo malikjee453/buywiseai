@@ -18,46 +18,25 @@ def _display_name(metadata, source):
     title = _clean(metadata.get("title"), "")
     if not title:
         return _clean(source, "Product")
-
-    title = re.sub(r"\s+", " ", title).strip()
-
-    # Remove common retailer snippet clutter while keeping the product name
-    # exactly grounded in the retrieved title.
-    title = re.sub(
-        r"^\d+(?:\.\d+)?\s+\d+\s+Reviews?\s+",
-        "",
-        title,
-        flags=re.I,
-    )
-    title = re.sub(
-        r"\s+Rs\s+[\d,]+(?:\s+Rs\s+[\d,]+)?\s+\d+%\s+OFF.*$",
-        "",
-        title,
-        flags=re.I,
-    )
-    title = re.sub(
-        r"\s+PKR\s+[\d,]+.*$",
-        "",
-        title,
-        flags=re.I,
-    )
-
+    title = re.sub(r"\\s+", " ", title).strip()
+    title = re.sub(r"^\\d+(?:\\.\\d+)?\\s+\\d+\\s+Reviews?\\s+", "", title, flags=re.I)
+    title = re.sub(r"\\s+Rs\\s+[\\d,]+(?:\\s+Rs\\s+[\\d,]+)?\\s+\\d+%\\s+OFF.*$", "", title, flags=re.I)
+    title = re.sub(r"\\s+PKR\\s+[\\d,]+.*$", "", title, flags=re.I)
     return title.strip()[:120] or _clean(source, "Product")
 
 
 def _record_to_product(item):
-    metadata = item.get("metadata")
-    if not isinstance(metadata, dict):
-        metadata = {}
-
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
     url = _clean(metadata.get("url"), "")
     source = _clean(item.get("source"), "")
     if not url or not source:
         return None
-
-    specs = metadata.get("specs")
-    if not isinstance(specs, dict):
-        specs = {}
+    specs = metadata.get("specs") if isinstance(metadata.get("specs"), dict) else {}
+    verification = metadata.get("verification") if isinstance(metadata.get("verification"), dict) else {}
+    checks = verification.get("checks") if isinstance(verification.get("checks"), dict) else {}
+    price_verified = bool(verification.get("price_verified"))
+    specs_verified = bool(verification.get("specs_verified"))
+    status = str(verification.get("status", "insufficient"))
 
     return {
         "name": _display_name(metadata, source),
@@ -67,21 +46,15 @@ def _record_to_product(item):
             "performance": "Not available in evidence",
             "battery": _clean(specs.get("battery")),
             "camera": _clean(specs.get("camera")),
-            "storage_ram": _clean(
-                " / ".join(
-                    value for value in (
-                        _clean(specs.get("storage"), ""),
-                        _clean(specs.get("ram"), ""),
-                    )
-                    if value
-                ),
-                "Not available in evidence",
-            ),
+            "storage_ram": _clean(" / ".join(value for value in (_clean(specs.get("storage"), ""), _clean(specs.get("ram"), "")) if value), "Not available in evidence"),
         },
-        "strengths": [],
-        "tradeoffs": [],
-        "requirement_fit": [],
-        "evidence_status": "Retrieved from live web evidence",
+        "verification": {
+            "status": status,
+            "price_verified": price_verified,
+            "specs_verified": specs_verified,
+            "variant_identified": bool(checks.get("variant_identified")),
+        },
+        "evidence_status": status,
         "source": source,
         "source_url": url,
         "availability": [{"source": source, "url": url}],
@@ -89,55 +62,33 @@ def _record_to_product(item):
 
 
 def build_comparison(query, structured, evidence):
-    """
-    Build the buyer-facing table deterministically from verified live records.
-
-    The previous version sent all candidate products to the LLM and asked it
-    to choose the output. That allowed the model to return only 3 products
-    even when 10+ live records had been retrieved, and it could also hit the
-    Groq token limit. The buyer table must preserve retrieved products exactly,
-    so no LLM selection is needed here.
-    """
     if not isinstance(evidence, dict):
         return []
-
     source_records = evidence.get("evidence_records", [])
     if not isinstance(source_records, list):
         return []
 
     candidates = []
     seen_urls = set()
-
     for item in source_records:
         if not isinstance(item, dict) or not _is_real_live_record(item):
             continue
-
-        metadata = item.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
         url = str(metadata.get("url", "")).strip()
         if not url or url in seen_urls:
             continue
-
         product = _record_to_product(item)
-        if not product:
-            continue
+        if product:
+            seen_urls.add(url)
+            candidates.append(product)
 
-        seen_urls.add(url)
-        candidates.append(product)
-
-    # Maximize retailer diversity first: one product per source in round one,
-    # then a second product per source, and so on. Never invent a source or URL.
     by_source = {}
     for product in candidates:
         by_source.setdefault(product["source"], []).append(product)
 
     selected = []
     selected_urls = set()
-    max_per_source = 3
-
-    for round_index in range(max_per_source):
+    for round_index in range(3):
         for source, source_products in by_source.items():
             if round_index >= len(source_products):
                 continue
@@ -148,5 +99,4 @@ def build_comparison(query, structured, evidence):
             selected_urls.add(product["source_url"])
             if len(selected) >= 12:
                 return selected
-
     return selected
