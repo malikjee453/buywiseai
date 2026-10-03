@@ -170,7 +170,7 @@ def _is_product_url(source, url):
     if source == "Daraz Pakistan":
         return bool(re.search(r"/products/[^/]+-i\d+\.html$", path, re.I))
     if source == "Mega.pk":
-        return "/mobiles/" in path and path.count("/") >= 4
+        return bool(re.search(r"/mobiles_products/\d+/[^/]+\.html$", path, re.I)) or bool(re.search(r"/mobiles/[^/]+$", path, re.I))
     if source == "Shophive":
         blocked = ("/catalogsearch", "/search", "/category", "/categories", "/customer", "/checkout", "/cart", "/blog")
         if any(item in path for item in blocked):
@@ -180,7 +180,7 @@ def _is_product_url(source, url):
         blocked = ("/category", "/catalogsearch", "/search", "/customer", "/checkout", "/cart", "/blog", "/sale", "/brands", "/pre-owned", "/accessories")
         if any(item in path for item in blocked):
             return False
-        return bool(re.search(r"/mobiles/[^/]+$", path))
+        return bool(re.search(r"/mobiles/[^/]+$", path)) or bool(re.search(r"/[^/]+-price-in-pakistan$", path))
     if source == "Telemart":
         return "/products/" in path and path.count("/") >= 4
     if re.search(r"/(product|item|p|dp|products)/[^/]+", path, re.I):
@@ -608,11 +608,11 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
         if source == "Daraz Pakistan":
             pattern = rf'https?://(?:www\.)?{re.escape(host)}/products/[^\s"<>]+-i\d+\.html'
         elif source == "Mega.pk":
-            pattern = rf'https?://(?:www\.)?{re.escape(host)}/mobiles/[^\s"<>]+'
+            pattern = rf'https?://(?:www\.)?{re.escape(host)}/(?:mobiles_products/\d+/[^\s"<>]+|mobiles/[^\s"<>]+)'
         elif source == "Shophive":
             pattern = rf'https?://(?:www\.)?{re.escape(host)}/[^\s"<>]+'
         else:
-            pattern = rf'https?://(?:www\.)?{re.escape(host)}/mobiles/[^\s"<>]+'
+            pattern = rf'https?://(?:www\.)?{re.escape(host)}/(?:mobiles/[^\s"<>]+|[^\s"<>]+-price-in-pakistan)'
         for raw_url in re.findall(pattern, html, re.I):
             add_url(raw_url, raw_url)
             if len(discovered) >= limit * 3:
