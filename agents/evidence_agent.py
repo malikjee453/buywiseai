@@ -6,11 +6,13 @@ from core.prompts import EVIDENCE_PROMPT
 MAX_EVIDENCE_ITEMS = 6
 MAX_TEXT_CHARS = 180
 
+
 def _normalize_price(value):
     if value is None:
         return None
     digits = re.sub(r"\D", "", str(value))
     return int(digits) if digits else None
+
 
 def _compact_evidence(evidence):
     compact = []
@@ -52,6 +54,7 @@ def _compact_evidence(evidence):
 
     return compact
 
+
 def _local_checks(evidence):
     notes = []
     conflicts = []
@@ -83,27 +86,36 @@ def _local_checks(evidence):
 
     return notes, conflicts, gaps
 
+
 def verify_evidence(query, structured, evidence):
     compact = _compact_evidence(evidence)
     local_notes, local_conflicts, local_gaps = _local_checks(evidence)
-
     context = json.dumps(compact, ensure_ascii=False)
 
-    raw = chat(
-        EVIDENCE_PROMPT,
-        f"Request: {query}\n"
-        f"Structured: {json.dumps(structured, ensure_ascii=False)}\n"
-        f"Evidence records:\n{context or 'None'}"
-    )
-
+    result = None
     try:
-        result = json.loads(raw)
-    except json.JSONDecodeError:
+        raw = chat(
+            EVIDENCE_PROMPT,
+            f"Request: {query}\n"
+            f"Structured: {json.dumps(structured, ensure_ascii=False)}\n"
+            f"Evidence records:\n{context or 'None'}",
+        )
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError:
+            result = None
+    except Exception:
+        # A blocked/unreachable LLM must not discard valid live retailer evidence.
+        result = None
+
+    if not isinstance(result, dict):
         result = {
             "verified_claims": [],
             "conflicts": [],
             "gaps": [],
-            "notes": []
+            "notes": [
+                "AI evidence analysis was unavailable; live retailer records were preserved for comparison."
+            ],
         }
 
     result.setdefault("verified_claims", [])
@@ -127,8 +139,6 @@ def verify_evidence(query, structured, evidence):
 
     result["notes"] = _clean_messages(result["notes"] + local_notes)
 
-    # Remove common recommendation/ranking language from evidence notes so
-    # the final response cannot accidentally present it as a verified fact.
     blocked = ("best", "strongest", "stronger choice", "better choice", "recommend")
     result["notes"] = [
         note for note in result["notes"]
@@ -138,7 +148,6 @@ def verify_evidence(query, structured, evidence):
     result["gaps"] = _clean_messages(result["gaps"] + local_gaps)
 
     # Preserve the original live evidence records for downstream agents.
-    # The LLM's verified_claims are summaries and must never replace source URLs.
     result["evidence_records"] = [
         item for item in evidence
         if isinstance(item, dict)
