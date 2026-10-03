@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
+from urllib.parse import urlsplit
 
 from buywise.schemas import ProductListing, RawSearchResult
 from buywise.categories import detect_categories
@@ -64,7 +65,6 @@ def _build_listings(
             continue
         if not source or source == "unknown":
             continue
-            continue
 
         path = canonical_url.split("?", 1)[0].rstrip("/").lower()
         bad_path_markers = (
@@ -117,7 +117,18 @@ def _build_listings(
         if len(listings) >= TARGET_RESULTS:
             break
 
-    return listings
+    final: list[ProductListing] = []
+    final_hosts: set[str] = set()
+    for listing in listings:
+        host = urlsplit(str(listing.url)).netloc.lower().removeprefix("www.")
+        if not host or host in final_hosts:
+            continue
+        final_hosts.add(host)
+        final.append(listing)
+        if len(final) >= TARGET_RESULTS:
+            break
+
+    return final
 
 
 def _search_round(
