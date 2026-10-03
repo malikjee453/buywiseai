@@ -1,6 +1,7 @@
 import streamlit as st
 
 from buywise.llm import LLMConfigurationError, get_llm
+from buywise.categories import SHOPPING_CATEGORIES
 from buywise.providers import run_search
 from buywise.providers.platforms import PLATFORMS, platform_count
 from buywise.schemas import ProductQuery
@@ -32,6 +33,11 @@ with st.expander("Search provider status"):
         "Paid providers are used only when their API key is configured. "
         "DuckDuckGo and targeted platform discovery do not require a key."
     )
+
+with st.expander("Shopping categories in BuyWiseAI"):
+    for department, subcategories in SHOPPING_CATEGORIES.items():
+        st.markdown(f"**{department}**")
+        st.write(", ".join(subcategories.keys()))
 
 with st.expander(f"Shopping platforms in BuyWiseAI ({platform_count()})"):
     for category, platforms in PLATFORMS.items():
