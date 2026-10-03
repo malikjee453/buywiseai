@@ -22,7 +22,7 @@ PROVIDERS: list[SearchProvider] = [
     MarketplaceProvider(),
 ]
 
-MAX_RESULTS_PER_SOURCE = 2
+MAX_RESULTS_PER_SOURCE = 1
 TARGET_RESULTS = 10
 MIN_DISTINCT_SOURCES = 8
 MAX_SEARCH_ROUNDS = 2
@@ -133,12 +133,12 @@ def run_search(
     country: str,
     max_results: int = 20,
 ) -> tuple[list[RawSearchResult], list[ProductListing], list[str]]:
-    """Run up to three rounds until coverage reaches 10 results / 8 sources."""
+    """Search providers as discovery channels; return at most 10 total verified products, prioritizing distinct sources."""
     all_raw: list[RawSearchResult] = []
     errors: list[str] = []
 
     for search_query in _query_variants(query)[:MAX_SEARCH_ROUNDS]:
-        raw, round_errors = _search_round(search_query, country, max_results)
+        raw, round_errors = _search_round(search_query, country, min(max_results, 10))
         all_raw.extend(raw)
         errors.extend(round_errors)
 
