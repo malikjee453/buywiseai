@@ -6,43 +6,32 @@ from ddgs import DDGS
 
 from buywise.schemas import RawSearchResult
 from .base import SearchProvider
+from .platforms import all_platforms
 
 
 class MarketplaceProvider(SearchProvider):
-    """Explicit Pakistan shopping-site coverage using search-engine discovery."""
+    """Broad platform-targeted discovery for many Pakistan shopping categories."""
 
-    name = "marketplace-targeted"
+    name = "platform-targeted"
     requires_key = False
     env_var = None
 
-    TARGETS = {
-        "daraz.pk": "site:daraz.pk",
-        "aliexpress.com": "site:aliexpress.com",
-        "priceoye.pk": "site:priceoye.pk",
-        "mega.pk": "site:mega.pk",
-        "qeemat.pk": "site:qeemat.pk",
-        "geemat.pk": "site:geemat.pk",
-        "mobiledaam.pk": "site:mobiledaam.pk",
-        "phonebolee.com": "site:phonebolee.com",
-        "whatmobile.com.pk": "site:whatmobile.com.pk",
-        "hamariweb.com": "site:hamariweb.com",
-    }
-
     def _search_one(
         self,
+        platform: str,
         domain: str,
-        operator: str,
         query: str,
         max_results: int,
     ) -> list[RawSearchResult]:
         search_query = (
-            f'{operator} "{query}" '
+            f'site:{domain} "{query}" '
             f'("Rs" OR "PKR" OR "price") Pakistan'
         )
+
         with DDGS(timeout=15) as ddgs:
             items = ddgs.text(
                 search_query,
-                max_results=max(2, min(max_results, 5)),
+                max_results=max(2, min(max_results, 4)),
             )
 
         return [
@@ -50,7 +39,7 @@ class MarketplaceProvider(SearchProvider):
                 title=str(item.get("title", "")),
                 url=str(item.get("href", "")),
                 snippet=str(item.get("body", "")),
-                source=domain,
+                source=platform,
                 provider=self.name,
                 raw_data=item,
             )
@@ -63,28 +52,29 @@ class MarketplaceProvider(SearchProvider):
         country: str,
         max_results: int,
     ) -> list[RawSearchResult]:
+        platforms = all_platforms()
         results: list[RawSearchResult] = []
 
         with ThreadPoolExecutor(
-            max_workers=min(10, len(self.TARGETS)),
-            thread_name_prefix="buywise-market",
+            max_workers=min(12, len(platforms)),
+            thread_name_prefix="buywise-platform",
         ) as pool:
             futures = {
                 pool.submit(
                     self._search_one,
+                    platform,
                     domain,
-                    operator,
                     query,
                     max_results,
-                ): domain
-                for domain, operator in self.TARGETS.items()
+                ): platform
+                for platform, domain in platforms.items()
             }
 
             for future in as_completed(futures):
                 try:
                     results.extend(future.result())
                 except Exception:
-                    # Search coverage is best-effort; another site must continue.
+                    # One unavailable store must not stop the remaining stores.
                     continue
 
         return results
