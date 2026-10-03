@@ -33,6 +33,17 @@ def render_product_cards(products):
             st.markdown(f"### {p.get('name', 'Product')}")
             st.write(f"**Price:** {p.get('price', 'Not available in evidence')}")
 
+            source = p.get("source", "Source not available")
+            source_url = p.get("source_url", "")
+            if source_url:
+                st.markdown(
+                    f'<div class="product-source"><b>Source:</b> '
+                    f'<a href="{source_url}" target="_blank" rel="noopener noreferrer">{source}</a></div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.caption(f"Source: {source}")
+
             specs = p.get("key_specs", {})
             for key, label in labels.items():
                 st.write(f"**{label}:** {specs.get(key, 'Not available in evidence')}")
