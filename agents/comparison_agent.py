@@ -1,4 +1,5 @@
 import json
+import re
 from core.llm import chat
 from core.prompts import COMPARISON_PROMPT
 
@@ -52,6 +53,8 @@ def _normalize_product(product):
             if isinstance(fit, list) else []
         ),
         "evidence_status": _clean_value(product.get("evidence_status")),
+        "source": _clean_value(product.get("source")),
+        "source_url": _clean_value(product.get("source_url")),
     }
 
 def _is_real_live_record(record):
@@ -60,31 +63,31 @@ def _is_real_live_record(record):
     return source_type == "live_web" and source not in {"demo", "demonstration"}
 
 def _attach_source_links(products, compact):
-    """Attach only source URLs that were actually supplied with matching evidence."""
+    """Attach only URLs actually supplied by retrieved evidence."""
     enriched = []
     for product in products:
         name = product.get("name", "").casefold()
+        name_tokens = set(re.findall(r"[a-z0-9]+", name))
         links = []
-        seen_links = set()
-
+        seen = set()
         for record in compact:
             title = record.get("title", "").casefold()
+            title_tokens = set(re.findall(r"[a-z0-9]+", title))
             if not name or not title:
                 continue
-            if name in title or title in name:
+            if name in title or title in name or len(name_tokens & title_tokens) >= 2:
                 url = record.get("url", "")
-                if url and url not in seen_links:
-                    links.append({
-                        "source": record.get("source", "Source"),
-                        "url": url,
-                    })
-                    seen_links.add(url)
-
+                if url and url not in seen:
+                    links.append({"source": record.get("source", "Source"), "url": url})
+                    seen.add(url)
+        supplied = product.get("source_url", "")
+        exact = next((x for x in links if x["url"] == supplied), None)
+        if exact:
+            links = [exact] + [x for x in links if x["url"] != supplied]
         product["availability"] = links
         product["source"] = links[0]["source"] if links else "Source not available"
         product["source_url"] = links[0]["url"] if links else ""
         enriched.append(product)
-
     return enriched
 
 def build_comparison(query, structured, evidence):
