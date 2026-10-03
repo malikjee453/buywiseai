@@ -10,7 +10,13 @@ from .platforms import relevant_platforms
 
 
 class MarketplaceProvider(SearchProvider):
-    """Broad platform-targeted discovery for many Pakistan shopping categories."""
+    """
+    Targeted shopping-platform discovery.
+
+    This is the main free route for store diversity. It searches many actual
+    shopping websites rather than treating DuckDuckGo itself as a shopping
+    source.
+    """
 
     name = "platform-targeted"
     requires_key = False
@@ -23,43 +29,35 @@ class MarketplaceProvider(SearchProvider):
         query: str,
         max_results: int,
     ) -> list[RawSearchResult]:
-        # Do not require price words in the search query. Many stores expose
-        # the price only in structured metadata/snippets, while their indexed
-        # page title contains the product terms.
-        search_query = f'site:{domain} {query} Pakistan'
+        search_query = f"site:{domain} {query} Pakistan"
 
-        items = []
-        try:
-            with DDGS(timeout=8) as ddgs:
-                items = ddgs.text(
-                    search_query,
-                    region="pk-en",
-                    backend="auto",
-                    max_results=max(3, min(max_results, 5)),
-                )
-        except Exception:
+        for region, backend in (("pk-en", "auto"), ("wt-wt", "bing")):
             try:
-                with DDGS(timeout=8) as ddgs:
+                with DDGS(timeout=6) as ddgs:
                     items = ddgs.text(
                         search_query,
-                        region="wt-wt",
-                        backend="bing",
-                        max_results=max(3, min(max_results, 5)),
+                        region=region,
+                        backend=backend,
+                        max_results=min(max_results, 5),
                     )
-            except Exception:
-                return []
+                if not items:
+                    continue
 
-        return [
-            RawSearchResult(
-                title=str(item.get("title", "")),
-                url=str(item.get("href", "")),
-                snippet=str(item.get("body", "")),
-                source=platform,
-                provider=self.name,
-                raw_data=item,
-            )
-            for item in items
-        ]
+                return [
+                    RawSearchResult(
+                        title=str(item.get("title", "")),
+                        url=str(item.get("href", "")),
+                        snippet=str(item.get("body", "")),
+                        source=platform,
+                        provider=self.name,
+                        raw_data=item,
+                    )
+                    for item in items
+                ]
+            except Exception:
+                continue
+
+        return []
 
     def search(
         self,
@@ -67,11 +65,17 @@ class MarketplaceProvider(SearchProvider):
         country: str,
         max_results: int,
     ) -> list[RawSearchResult]:
-        platforms = relevant_platforms(query, max_platforms=10)
+        # Search more candidate stores than the final 10-result target.
+        # This gives the diversity controller enough alternatives when some
+        # stores have no indexed product page.
+        platforms = relevant_platforms(query, max_platforms=20)
         results: list[RawSearchResult] = []
 
+        if not platforms:
+            return results
+
         with ThreadPoolExecutor(
-            max_workers=min(10, len(platforms)),
+            max_workers=min(12, len(platforms)),
             thread_name_prefix="buywise-platform",
         ) as pool:
             futures = {
@@ -89,7 +93,7 @@ class MarketplaceProvider(SearchProvider):
                 try:
                     results.extend(future.result())
                 except Exception:
-                    # One unavailable store must not stop the remaining stores.
+                    # One unavailable store never stops the others.
                     continue
 
         return results
