@@ -98,6 +98,24 @@ def _is_product_url(source, url):
     if re.search(r"/(product|item|p|dp|products|mobiles)/[^/]+", path, re.I):
         return True
 
+    # Shophive product pages use /<slug>.html or /product/<slug>.
+    if "shophive.com" in path:
+        blocked = (
+            "/catalogsearch", "/search", "/mobile-phones", "/category",
+            "/categories", "/customer", "/checkout", "/cart", "/blog",
+        )
+        if any(item in path for item in blocked):
+            return False
+        return path.endswith(".html") or path.count("/") >= 2
+
+    # Mega.pk mobile pages commonly use /mobiles/<slug>.
+    if "mega.pk" in path and "/mobiles/" in path:
+        return True
+
+    # Daraz product pages use /products/<slug>-i<id>.html.
+    if "daraz.pk" in path and re.search(r"/products/.+-i\d+\.html", path, re.I):
+        return True
+
     if "telemart.pk" in path and "/products/" in path:
         return True
 
@@ -282,7 +300,9 @@ def _search_source(source, config, query, budget, group):
             candidates.append((absolute, anchor))
 
         results = []
-        for product_url, anchor in candidates[:10]:
+        # Try more candidates because some retailer pages contain accessories
+    # before the actual smartphone products.
+    for product_url, anchor in candidates[:20]:
             try:
                 detail_html = _fetch(product_url, timeout=6)
 
@@ -344,7 +364,7 @@ def _search_engine_candidates(source, config, query):
                 continue
             seen.add(absolute)
             candidates.append((absolute, anchor))
-        return candidates[:10]
+        return candidates[:20]
     except Exception:
         return []
 
