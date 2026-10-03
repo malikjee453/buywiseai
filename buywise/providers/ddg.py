@@ -12,7 +12,7 @@ class DuckDuckGoProvider(SearchProvider):
     env_var = None
 
     def search(self, query: str, country: str, max_results: int) -> list[RawSearchResult]:
-        text = f"{query} price {country}"
+        text = f'"{query}" price Rs PKR {country}'
         with DDGS(timeout=8) as ddgs:
             items = ddgs.text(text, region="pk-en", max_results=min(max_results, 20))
         return [RawSearchResult(
