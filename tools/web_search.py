@@ -593,7 +593,7 @@ def _search_engine_candidates(source, config, query):
     return candidates
 
 def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
-    """Discover product URLs from retailer HTML, including embedded page data."""
+    """Discover exact product URLs, then verify each exact detail page."""
     if source not in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
         return []
 
@@ -601,74 +601,90 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
     if source == "Daraz Pakistan":
         listing_url = config["search"].format(q=quote_plus(query))
 
-    try:
-        html = _fetch(listing_url, timeout=5)
-    except Exception:
-        return []
-
-    candidates = []
+    discovered = []
     seen = set()
 
-    def consider(raw_url, anchor=""):
+    def add_url(raw_url, anchor=""):
         absolute = urljoin(listing_url, unquote(raw_url))
         canonical = absolute.split("?", 1)[0].rstrip("/")
         if canonical in seen or not _is_product_url(source, canonical):
             return
         if not PRODUCT_WORDS.search(anchor + " " + canonical):
             return
-
-        # Pull a generous window around the URL. Retailer pages frequently
-        # keep title/price/specs in JSON or script data beside the URL.
-        pos = html.find(raw_url)
-        if pos < 0:
-            pos = html.find(canonical)
-        context = _clean(anchor)
-        if pos >= 0:
-            context = _clean(
-                context + " " + html[max(0, pos - 900):pos + 2200]
-            )
-
-        record = _record_from_context(context, source, canonical)
-        if not record:
-            return
-
-        price = _money(record.get("price"))
-        if budget and price and price > budget:
-            return
-
-        record["metadata"]["title"] = (
-            _clean(anchor)[:120]
-            or canonical.rsplit("/", 1)[-1][:120]
-        )
         seen.add(canonical)
-        candidates.append(record)
+        discovered.append((canonical, _clean(anchor)))
 
-    # Normal anchors.
-    parser = _LinkParser()
-    parser.feed(html)
-    for href, anchor in parser.links:
-        consider(href, anchor)
-        if len(candidates) >= limit:
-            return candidates
+    try:
+        html = _fetch(listing_url, timeout=5)
+    except Exception:
+        html = ""
 
-    # Embedded absolute URLs in JSON/JS.
-    host = config["base"].split("//", 1)[-1].replace("www.", "")
-    if source == "Daraz Pakistan":
-        pattern = rf'https?://(?:www\.)?{re.escape(host)}/products/[^\s"<>\\]+-i\d+\.html'
-    elif source == "Mega.pk":
-        pattern = rf'https?://(?:www\.)?{re.escape(host)}/mobiles/[^\s"<>\\]+'
-    elif source == "Shophive":
-        pattern = rf'https?://(?:www\.)?{re.escape(host)}/[^\s"<>\\]+'
-    else:
-        pattern = rf'https?://(?:www\.)?{re.escape(host)}/[^\s"<>\\]+'
+    if html:
+        parser = _LinkParser()
+        parser.feed(html)
+        for href, anchor in parser.links:
+            add_url(href, anchor)
+            if len(discovered) >= limit * 3:
+                break
 
-    for raw_url in re.findall(pattern, html, re.I):
-        consider(raw_url)
-        if len(candidates) >= limit:
-            break
+        host = config["base"].split("//", 1)[-1].replace("www.", "")
+        if source == "Daraz Pakistan":
+            pattern = rf'https?://(?:www\\.)?{re.escape(host)}/products/[^\\s"<>\\]+-i\\d+\\.html'
+        elif source == "Mega.pk":
+            pattern = rf'https?://(?:www\\.)?{re.escape(host)}/mobiles/[^\\s"<>\\]+'
+        else:
+            pattern = rf'https?://(?:www\\.)?{re.escape(host)}/[^\\s"<>\\]+'
+        for raw_url in re.findall(pattern, html, re.I):
+            add_url(raw_url)
+            if len(discovered) >= limit * 3:
+                break
 
-    return candidates
+    # Search indexes are a second discovery path when retailer HTML is
+    # JavaScript-heavy or hides product links.
+    if len(discovered) < limit:
+        for product_url, anchor in _search_engine_candidates(source, config, query):
+            add_url(product_url, anchor)
+            if len(discovered) >= limit * 3:
+                break
 
+    def verify_detail(item):
+        product_url, anchor = item
+        try:
+            detail_html = _fetch(product_url, timeout=5)
+            parser = _TextParser()
+            parser.feed(detail_html)
+            detail_text = _clean(" ".join(parser.parts))
+
+            records = _price_contexts(
+                detail_html, source, product_url, limit=2
+            )
+            verified = []
+            for record in records:
+                price = _money(record.get("price"))
+                if budget and price and price > budget:
+                    continue
+                record["metadata"]["title"] = (
+                    _clean(anchor)[:120]
+                    or record.get("metadata", {}).get("title")
+                    or product_url.rsplit("/", 1)[-1][:120]
+                )
+                record["metadata"]["price_source"] = "product_page_text"
+                record["text"] = detail_text[:1800]
+                _enrich_detail_metadata(record, detail_text, source)
+                verified.append(record)
+            return verified
+        except Exception:
+            return []
+
+    results = []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(verify_detail, item) for item in discovered[:limit * 2]]
+        for future in as_completed(futures):
+            results.extend(future.result())
+            if len(results) >= limit:
+                break
+
+    return results[:limit]
 
 def _search_source_with_fallback(source, config, query, budget, group):
     # First use the retailer's own search page. Some retailers expose only a
