@@ -1,5 +1,4 @@
 import streamlit as st
-from urllib.parse import urlsplit
 
 from buywise.llm import LLMConfigurationError, get_llm
 from buywise.providers import run_search
@@ -25,18 +24,8 @@ query = st.text_input(
     label_visibility="collapsed",
 )
 
-currency = st.selectbox(
-    "Display currency",
-    ["PKR", "USD", "GBP"],
-)
-
-max_results = st.slider(
-    "Maximum results",
-    5,
-    10,
-    10,
-)
-
+# Pakistan is the fixed market for BuyWiseAI.
+# The app searches for a maximum of 10 final verified products.
 if st.button("🔎 Search products", type="primary"):
     if not query.strip():
         st.error("Enter a product query.")
@@ -46,22 +35,14 @@ if st.button("🔎 Search products", type="primary"):
                 original_query=query,
                 normalized_query=query,
                 country="Pakistan",
-                currency=currency,
+                currency="PKR",
             )
 
-            with st.status(
-                "Searching shopping websites...",
-                expanded=False,
-            ) as status:
-                raw_results, listings, errors = run_search(
-                    parsed.normalized_query,
-                    parsed.country,
-                    max_results=max_results,
-                )
-                status.update(
-                    label=f"Search complete — {len(listings)} priced results",
-                    state="complete",
-                )
+            raw_results, listings, errors = run_search(
+                parsed.normalized_query,
+                parsed.country,
+                max_results=10,
+            )
 
             if not listings:
                 st.warning(
@@ -69,28 +50,6 @@ if st.button("🔎 Search products", type="primary"):
                     "Try a more specific product query."
                 )
             else:
-                distinct_sources = len({
-                    urlsplit(str(item.url)).netloc.lower().removeprefix("www.")
-                    for item in listings
-                })
-
-                st.success(
-                    f"Found {len(listings)} verified priced results from "
-                    f"{distinct_sources} different shopping websites."
-                )
-
-                if len(listings) < 10 or distinct_sources < 8:
-                    st.info(
-                        "Coverage is below the target of 10 products from "
-                        "8+ different shopping websites. BuyWiseAI will "
-                        "never duplicate a store or invent a price."
-                    )
-                else:
-                    st.success(
-                        "Coverage target reached: 10 products from 8+ "
-                        "different shopping websites."
-                    )
-
                 rows = [
                     {
                         "Product": item.title,
@@ -98,7 +57,7 @@ if st.button("🔎 Search products", type="primary"):
                         "Shopping website": item.source,
                         "Product page": str(item.url),
                     }
-                    for item in listings
+                    for item in listings[:10]
                 ]
 
                 st.dataframe(
@@ -114,6 +73,7 @@ if st.button("🔎 Search products", type="primary"):
 
         except Exception as exc:
             st.error(f"Search failed: {type(exc).__name__}: {exc}")
+
 
 # Keep Groq initialization available for the next AI recommendation stage,
 # but do not expose configuration/status details in the public interface.
