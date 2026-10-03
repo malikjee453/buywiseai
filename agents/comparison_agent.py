@@ -24,19 +24,19 @@ def _display_name(metadata, source):
     # Remove common retailer snippet clutter while keeping the product name
     # exactly grounded in the retrieved title.
     title = re.sub(
-        r"^\\d+(?:\\.\\d+)?\\s+\\d+\\s+Reviews?\\s+",
+        r"^\d+(?:\.\d+)?\s+\d+\s+Reviews?\s+",
         "",
         title,
         flags=re.I,
     )
     title = re.sub(
-        r"\\s+Rs\\s+[\\d,]+(?:\\s+Rs\\s+[\\d,]+)?\\s+\\d+%\\s+OFF.*$",
+        r"\s+Rs\s+[\d,]+(?:\s+Rs\s+[\d,]+)?\s+\d+%\s+OFF.*$",
         "",
         title,
         flags=re.I,
     )
     title = re.sub(
-        r"\\s+PKR\\s+[\\d,]+.*$",
+        r"\s+PKR\s+[\d,]+.*$",
         "",
         title,
         flags=re.I,
