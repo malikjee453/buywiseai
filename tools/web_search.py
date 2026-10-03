@@ -648,7 +648,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
             if len(discovered) >= limit * 3:
                 break
 
-    # Search indexes are a second discovery path when retailer HTML is
+    # Prioritize catalog products already known to fit the budget.\n    catalog_records = _listing_records_from_links(\n        html, source, listing_url, budget=budget, limit=limit * 3\n    ) if html else []\n    catalog_urls = {\n        str(item.get("metadata", {}).get("url", ""))\n        for item in catalog_records\n    }\n\n    # Search indexes are a second discovery path when retailer HTML is
     # JavaScript-heavy or hides product links.
     if len(discovered) < limit:
         for product_url, anchor in _search_engine_candidates(source, config, query):
@@ -685,9 +685,12 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
         except Exception:
             return []
 
+    prioritized = [item for item in discovered if item[0] in catalog_urls]
+    prioritized += [item for item in discovered if item not in prioritized]
+
     results = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(verify_detail, item) for item in discovered[:limit * 2]]
+        futures = [pool.submit(verify_detail, item) for item in prioritized[:limit * 2]]
         for future in as_completed(futures):
             results.extend(future.result())
             if len(results) >= limit:
@@ -697,9 +700,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
     # when the retailer catalog itself exposes its exact URL and price.
     # Validation labels this evidence as partial rather than fully verified.
     if len(results) < limit and html:
-        listing_records = _listing_records_from_links(
-            html, source, listing_url, budget=budget, limit=limit * 2
-        )
+        listing_records = catalog_records
         existing_urls = {
             str(item.get("metadata", {}).get("url", ""))
             for item in results
