@@ -119,6 +119,48 @@ def _extract_specs(text):
             specs[key] = value
     return specs
 
+def _enrich_detail_metadata(record, detail_text, source):
+    """Attach retailer-specific evidence extracted from the live product page."""
+    metadata = record.setdefault("metadata", {})
+    metadata["specs"] = _extract_specs(detail_text)
+    text = _clean(detail_text)
+    patterns = {
+        "Daraz Pakistan": {
+            "seller": r"(?:sold by|seller)\s*[:\-]?\s*([^|]{2,80}?)(?=\s+(?:seller rating|rating|reviews|warranty|delivery)\b|$)",
+            "seller_rating": r"(?:seller rating)\s*[:\-]?\s*([0-9.]+\s*(?:/\s*5|%))",
+            "product_rating": r"(?:rating|product rating)\s*[:\-]?\s*([0-9.]+\s*(?:/\s*5|%))",
+            "reviews": r"(?:reviews?|ratings?)\s*[:\-]?\s*([0-9][0-9,]*)",
+            "warranty": r"(?:warranty)\s*[:\-]?\s*([^|]{3,80}?)(?=\s+(?:delivery|seller|rating)\b|$)",
+            "delivery": r"(?:delivery|shipping)\s*[:\-]?\s*([^|]{3,80}?)(?=\s+(?:warranty|seller|rating)\b|$)",
+            "variant": r"(?:color|colour|variant|storage|ram)\s*[:\-]?\s*([^|]{2,60})",
+        },
+        "Shophive": {
+            "warranty": r"(?:warranty|brand warranty)\s*[:\-]?\s*([^|]{3,80}?)(?=\s+(?:availability|rating|reviews)\b|$)",
+            "availability": r"(?:availability|stock|status)\s*[:\-]?\s*([^|]{2,50})",
+            "rating": r"(?:rating|stars?)\s*[:\-]?\s*([0-9.]+\s*(?:/\s*5|%))",
+            "reviews": r"(?:reviews?)\s*[:\-]?\s*([0-9][0-9,]*)",
+        },
+        "Mega.pk": {
+            "warranty": r"(?:warranty|brand warranty)\s*[:\-]?\s*([^|]{3,80}?)(?=\s+(?:availability|rating|reviews)\b|$)",
+            "availability": r"(?:availability|stock|status)\s*[:\-]?\s*([^|]{2,50})",
+            "rating": r"(?:rating|stars?)\s*[:\-]?\s*([0-9.]+\s*(?:/\s*5|%))",
+            "reviews": r"(?:reviews?)\s*[:\-]?\s*([0-9][0-9,]*)",
+        },
+        "iShopping": {
+            "warranty": r"(?:warranty|brand warranty)\s*[:\-]?\s*([^|]{3,80}?)(?=\s+(?:availability|rating|reviews)\b|$)",
+            "availability": r"(?:availability|stock|status)\s*[:\-]?\s*([^|]{2,50})",
+            "rating": r"(?:rating|stars?)\s*[:\-]?\s*([0-9.]+\s*(?:/\s*5|%))",
+            "reviews": r"(?:reviews?)\s*[:\-]?\s*([0-9][0-9,]*)",
+        },
+    }
+    for key, pattern in patterns.get(source, {}).items():
+        match = re.search(pattern, text, re.I)
+        if match:
+            value = _clean(match.group(1))
+            if value:
+                metadata[key] = value[:120]
+    return record
+
 def _is_product_url(source, url):
     """Return True only for URLs that look like individual product pages."""
     path = url.split("?", 1)[0].lower().rstrip("/")
@@ -467,9 +509,9 @@ def _search_source(source, config, query, budget, group):
                 detail = _price_contexts(detail_html, source, product_url, limit=1)
                 if detail:
                     detail[0]["metadata"]["title"] = anchor[:120]
-                    detail[0]["metadata"]["specs"] = _extract_specs(detail_text)
                     detail[0]["metadata"]["price_source"] = "product_page_text"
-                    detail[0]["text"] = detail_text[:1600]
+                    detail[0]["text"] = detail_text[:1800]
+                    _enrich_detail_metadata(detail[0], detail_text, source)
                     results.extend(detail)
             except Exception:
                 continue
@@ -506,7 +548,7 @@ def _search_engine_candidates(source, config, query):
     ):
         for search_query in search_queries[:1]:
             try:
-                html = _fetch(engine + quote_plus(search_query), timeout=8)
+                html = _fetch(engine + quote_plus(search_query), timeout=5)
                 parser = _LinkParser()
                 parser.feed(html)
 
@@ -572,7 +614,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
         for item in results
     }
 
-    fallback_limit = 3 if source in {"Daraz Pakistan", "Shophive", "Mega.pk", "iShopping"} else 5
+    fallback_limit = 4 if source in {"Daraz Pakistan", "Shophive", "Mega.pk", "iShopping"} else 5
     for product_url, anchor in _search_engine_candidates(source, config, query)[:fallback_limit]:
         if product_url in existing_urls:
             continue
@@ -587,8 +629,8 @@ def _search_source_with_fallback(source, config, query, budget, group):
             detail = _price_contexts(detail_html, source, product_url, limit=1)
             if detail:
                 detail[0]["metadata"]["title"] = anchor[:120]
-                detail[0]["metadata"]["specs"] = _extract_specs(detail_text)
-                detail[0]["text"] = detail_text[:1600]
+                detail[0]["text"] = detail_text[:1800]
+                _enrich_detail_metadata(detail[0], detail_text, source)
                 price = _money(detail[0].get("price"))
 
                 # A PKR budget can only be compared against a PKR price.
