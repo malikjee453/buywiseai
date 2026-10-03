@@ -1,34 +1,27 @@
-# 🛒 BuyWise AI
+# BuyWiseAI
 
-**Research before you buy.**
+Multi-agent, RAG-powered product search and price comparison platform.
 
-Evidence-grounded shopping research assistant using Advanced RAG + Multi-Agent AI.
-
-## Fixed rules
-- **BuyWise** = bold, orange, large
-- **AI** = small
-- Groq model = `openai/gpt-oss-120b`
-- GitHub repository
-- Streamlit deployment
-
-## Architecture
-Query Analyzer → Orchestrator → Advanced RAG → Evidence Agent → Comparison Agent → Response Agent
+## Stage 1
+Foundation: Pydantic schemas, Groq wrapper for openai/gpt-oss-120b, YAML configuration, logging, Streamlit health check, and tests.
 
 ## Run locally
-```bash
 python -m venv .venv
-.venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-Create `.streamlit/secrets.toml`:
-```toml
-GROQ_API_KEY = "your_key"
-```
-
-Run:
-```bash
+# create .env and set GROQ_API_KEY
+pytest -q
 streamlit run app.py
-```
 
-The included product records are fictional demonstration data only.
+## Architecture
+```mermaid
+flowchart LR
+ UI[Streamlit] --> Q[Query Understanding]
+ Q --> S[Parallel Search]
+ S --> E[Extraction]
+ E --> N[Normalize + Dedup]
+ N --> R[RAG + Rerank]
+ R --> V[Verification]
+ V --> C[Coverage Controller]
+ C --> A[Recommendation]
+ A --> UI
+```
