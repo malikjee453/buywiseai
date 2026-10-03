@@ -504,13 +504,7 @@ def _price_contexts(html, source, page_url, limit=12):
 
 
 def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
-    """Extract product-card evidence from listing HTML.
-
-    Retailer cards vary widely: prices may be separated from the anchor by
-    nested markup, tracking attributes, or several thousand characters of HTML.
-    We therefore locate the exact product href first, then inspect a generous
-    local card window and choose a sensible PKR price from that window.
-    """
+    """Extract product-card evidence using prices close to the exact product link."""
     parser = _LinkParser()
     parser.feed(html)
     results = []
@@ -541,41 +535,61 @@ def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
         if not match:
             continue
 
-        start = max(0, match.start() - 5000)
-        end = min(len(html), match.end() + 5000)
+        # Product cards normally keep title and price close together. A very
+        # large context window can accidentally capture tax, installment,
+        # shipping, or another product's price.
+        start = max(0, match.start() - 1200)
+        end = min(len(html), match.end() + 1800)
         raw_context = html[start:end]
         visible_context = _clean(
             unquote(re.sub(r"<[^>]+>", " ", raw_context))
         )
 
-        # Prefer an in-budget price when the user supplied a budget.
-        price_matches = list(
-            re.finditer(
-                r"(?:PKR|Rs\.?)\s*[0-9][0-9,]*(?:\.\d+)?",
-                visible_context,
-                re.I,
-            )
-        )
-        chosen_price = None
-        for price_match in price_matches:
-            value = _money(price_match.group(0))
-            if value and value >= 1000 and (not budget or value <= budget):
-                chosen_price = price_match.group(0)
-                break
-        if chosen_price is None and price_matches:
-            chosen_price = price_matches[0].group(0)
-        if not chosen_price:
+        price_candidates = []
+        for pm in re.finditer(
+            r"(?:PKR|Rs\.?)\s*[0-9][0-9,]*(?:\.\d+)?",
+            visible_context,
+            re.I,
+        ):
+            value = _money(pm.group(0))
+            if not value or value < 1000:
+                continue
+
+            price_window = visible_context[
+                max(0, pm.start()-180):min(len(visible_context), pm.end()+220)
+            ].lower()
+
+            score = 100 - min(abs(pm.start() - visible_context.find(anchor[:50])), 800) / 20
+
+            # Prefer explicit product-price labels.
+            if re.search(r"\b(?:price|sale price|our price|current price)\b", price_window, re.I):
+                score += 30
+
+            # Reject or heavily penalize non-product amounts.
+            if any(token in price_window for token in (
+                "per month", "/month", "monthly", "installment",
+                "emi", "down payment", "advance payment", "deposit",
+                "pta tax", "tax", "shipping", "delivery",
+            )):
+                score -= 100
+
+            if budget and value > budget:
+                score -= 80
+
+            price_candidates.append((score, value, pm.group(0)))
+
+        if not price_candidates:
             continue
 
-        # Put the exact product title first. This prevents navigation/footer
-        # text in the card window from becoming the displayed product name.
+        price_candidates.sort(key=lambda x: x[0], reverse=True)
+        _, chosen_value, chosen_price = price_candidates[0]
+
+        if budget and chosen_value > budget:
+            continue
+
         context = f"{anchor} {chosen_price} {visible_context}"
         record = _record_from_context(context, source, absolute)
         if not record:
-            continue
-
-        price = _money(record.get("price"))
-        if budget and (not price or price > budget):
             continue
 
         clean_title = re.sub(
@@ -597,6 +611,7 @@ def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
             break
 
     return results
+
 
 
 def _search_source(source, config, query, budget, group):
