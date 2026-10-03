@@ -167,50 +167,27 @@ def _is_product_url(source, url):
     if not path:
         return False
 
-    if re.search(r"/(product|item|p|dp|products|mobiles)/[^/]+", path, re.I):
-        return True
-
-    # Shophive uses /mobile-phones/<product-slug> for individual products.
-    if "shophive.com" in path:
-        blocked = (
-            "/catalogsearch", "/search", "/category", "/categories",
-            "/customer", "/checkout", "/cart", "/blog",
-        )
+    if source == "Daraz Pakistan":
+        return bool(re.search(r"/products/[^/]+-i\d+\.html$", path, re.I))
+    if source == "Mega.pk":
+        return "/mobiles/" in path and path.count("/") >= 4
+    if source == "Shophive":
+        blocked = ("/catalogsearch", "/search", "/category", "/categories", "/customer", "/checkout", "/cart", "/blog")
         if any(item in path for item in blocked):
             return False
-        if path.rstrip("/") == "https://www.shophive.com/mobile-phones":
+        return "/mobile-phones/" in path or "/laptops/" in path or "/tablets/" in path or path.endswith(".html")
+    if source == "iShopping":
+        blocked = ("/category", "/catalogsearch", "/search", "/customer", "/checkout", "/cart", "/blog", "/sale", "/brands", "/pre-owned", "/accessories")
+        if any(item in path for item in blocked):
             return False
-        return "/mobile-phones/" in path or path.endswith(".html") or path.count("/") >= 2
-
-    # Mega.pk mobile pages commonly use /mobiles/<slug>.
-    if "mega.pk" in path and "/mobiles/" in path:
+        return bool(re.search(r"/mobiles/[^/]+$", path))
+    if source == "Telemart":
+        return "/products/" in path and path.count("/") >= 4
+    if re.search(r"/(product|item|p|dp|products)/[^/]+", path, re.I):
         return True
-
-    # Daraz product pages use /products/<slug>-i<id>.html.
-    if "daraz.pk" in path and re.search(r"/products/.+-i\d+\.html", path, re.I):
-        return True
-
-    if "telemart.pk" in path and "/products/" in path:
-        return True
-
-    if "ishopping.pk" in path:
-        blocked = (
-            "/mobiles", "/electronics", "/category", "/catalogsearch",
-            "/search", "/customer", "/checkout", "/cart", "/blog",
-            "/sale", "/brands", "/pre-owned", "/accessories",
-        )
-        if any(path.endswith(item) or item + "/" in path for item in blocked):
-            return False
-        return path.count("/") >= 1
-
-    blocked = (
-        "/search", "/catalogsearch", "/category", "/categories/",
-        "/collection", "/collections/", "/shop", "/cart", "/account",
-        "/checkout", "/blog", "/tag/", "/page/",
-    )
+    blocked = ("/search", "/catalogsearch", "/category", "/categories/", "/collection", "/collections/", "/shop", "/cart", "/account", "/checkout", "/blog", "/tag/", "/page/")
     if any(item in path for item in blocked):
         return False
-
     return False
 
 
@@ -609,7 +586,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
         canonical = absolute.split("?", 1)[0].rstrip("/")
         if canonical in seen or not _is_product_url(source, canonical):
             return
-        if not PRODUCT_WORDS.search(anchor + " " + canonical):
+        if anchor and not PRODUCT_WORDS.search(anchor + " " + canonical):
             return
         seen.add(canonical)
         discovered.append((canonical, _clean(anchor)))
@@ -629,13 +606,15 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
 
         host = config["base"].split("//", 1)[-1].replace("www.", "")
         if source == "Daraz Pakistan":
-            pattern = rf'https?://(?:www\\.)?{re.escape(host)}/products/[^\\s"<>\\]+-i\\d+\\.html'
+            pattern = rf'https?://(?:www\.)?{re.escape(host)}/products/[^\s"<>]+-i\d+\.html'
         elif source == "Mega.pk":
-            pattern = rf'https?://(?:www\\.)?{re.escape(host)}/mobiles/[^\\s"<>\\]+'
+            pattern = rf'https?://(?:www\.)?{re.escape(host)}/mobiles/[^\s"<>]+'
+        elif source == "Shophive":
+            pattern = rf'https?://(?:www\.)?{re.escape(host)}/[^\s"<>]+'
         else:
-            pattern = rf'https?://(?:www\\.)?{re.escape(host)}/[^\\s"<>\\]+'
+            pattern = rf'https?://(?:www\.)?{re.escape(host)}/mobiles/[^\s"<>]+'
         for raw_url in re.findall(pattern, html, re.I):
-            add_url(raw_url)
+            add_url(raw_url, raw_url)
             if len(discovered) >= limit * 3:
                 break
 
