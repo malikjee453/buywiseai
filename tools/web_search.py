@@ -617,6 +617,52 @@ def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
 
 
 
+def _verified_detail_records(html, source, product_url, detail_text=None, limit=1):
+    """Return only prices tied to the exact product page.
+
+    Priority:
+    1. Product/Offer JSON-LD, where the retailer explicitly publishes the offer.
+    2. A tightly scoped product-page price statement.
+    Listing/card prices are never treated as verified product prices.
+    """
+    if not _is_product_url(source, product_url):
+        return []
+
+    if detail_text is None:
+        parser = _TextParser()
+        parser.feed(html)
+        detail_text = _clean(" ".join(parser.parts))
+
+    structured = _jsonld_product_records(html, source, product_url)
+    verified = []
+    for record in structured:
+        price = _money(record.get("price"))
+        if not price:
+            continue
+        record["metadata"]["url"] = product_url
+        record["metadata"]["price_source"] = "jsonld_product_offer"
+        record["metadata"]["listing_verified"] = False
+        record["text"] = detail_text[:1800]
+        _enrich_detail_metadata(record, detail_text, source)
+        verified.append(record)
+        if len(verified) >= limit:
+            return verified
+
+    records = _price_contexts(html, source, product_url, limit=max(1, limit))
+    for record in records:
+        if str(record.get("metadata", {}).get("price_source", "")) != "product_page_text":
+            continue
+        record["metadata"]["url"] = product_url
+        record["metadata"]["listing_verified"] = False
+        record["text"] = detail_text[:1800]
+        _enrich_detail_metadata(record, detail_text, source)
+        verified.append(record)
+        if len(verified) >= limit:
+            break
+
+    return verified[:limit]
+
+
 def _search_source(source, config, query, budget, group):
     try:
         q = quote_plus(query)
@@ -654,10 +700,9 @@ def _search_source(source, config, query, budget, group):
                 detail_parser.feed(detail_html)
                 detail_text = _clean(" ".join(detail_parser.parts))
 
-                detail = _price_contexts(detail_html, source, product_url, limit=1)
+                detail = _verified_detail_records(detail_html, source, product_url, detail_text, limit=1)
                 if detail:
                     detail[0]["metadata"]["title"] = anchor[:120]
-                    detail[0]["metadata"]["price_source"] = "product_page_text"
                     detail[0]["text"] = detail_text[:1800]
                     _enrich_detail_metadata(detail[0], detail_text, source)
                     results.extend(detail)
@@ -816,9 +861,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
             parser.feed(detail_html)
             detail_text = _clean(" ".join(parser.parts))
 
-            records = _price_contexts(
-                detail_html, source, product_url, limit=2
-            )
+            records = _verified_detail_records(detail_html, source, product_url, detail_text, limit=2)
             verified = []
             for record in records:
                 price = _money(record.get("price"))
@@ -829,7 +872,6 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
                     or record.get("metadata", {}).get("title")
                     or product_url.rsplit("/", 1)[-1][:120]
                 )
-                record["metadata"]["price_source"] = "product_page_text"
                 record["text"] = detail_text[:1800]
                 _enrich_detail_metadata(record, detail_text, source)
                 verified.append(record)
@@ -848,26 +890,8 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
             if len(results) >= limit:
                 break
 
-    # If an exact product page blocks automated fetching, retain the product
-    # when the retailer catalog itself exposes its exact URL and price.
-    # Validation labels this evidence as partial rather than fully verified.
-    if len(results) < limit and html:
-        listing_records = catalog_records
-        existing_urls = {
-            str(item.get("metadata", {}).get("url", ""))
-            for item in results
-        }
-        for record in listing_records:
-            product_url = str(record.get("metadata", {}).get("url", ""))
-            if product_url in existing_urls:
-                continue
-            record["metadata"]["price_source"] = "listing_page_text"
-            record["metadata"]["listing_verified"] = True
-            results.append(record)
-            existing_urls.add(product_url)
-            if len(results) >= limit:
-                break
-
+    # Never display listing/card prices as final prices. If the exact product
+    # page cannot be verified, omit the product instead of guessing.
     return results[:limit]
 
 def _search_source_with_fallback(source, config, query, budget, group):
@@ -919,7 +943,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
             detail_parser = _TextParser()
             detail_parser.feed(detail_html)
             detail_text = _clean(" ".join(detail_parser.parts))
-            detail = _price_contexts(detail_html, source, product_url, limit=1)
+            detail = _verified_detail_records(detail_html, source, product_url, detail_text, limit=1)
             if detail:
                 detail[0]["metadata"]["title"] = anchor[:120]
                 detail[0]["text"] = detail_text[:1800]
