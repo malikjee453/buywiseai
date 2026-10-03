@@ -11,6 +11,7 @@ st.set_page_config(page_title="BuyWiseAI", page_icon="🛒", layout="wide")
 
 st.title("🛒 BuyWiseAI")
 st.caption("Multi-agent product search and price comparison — Stage 2")
+st.caption("Build: source-diversity verification enabled")
 
 st.markdown(
     """
@@ -29,6 +30,7 @@ max_results = st.slider("Maximum total results", 5, 10, 10)
 
 with st.expander("Search provider status"):
     st.write("Serper.dev, SerpAPI, Tavily, Brave Search, DuckDuckGo, plus targeted shopping-platform discovery.")
+st.caption("Final results: maximum 10 total, one verified product per shopping website.")
     st.caption(
         "Paid providers are used only when their API key is configured. "
         "DuckDuckGo and targeted platform discovery do not require a key."
