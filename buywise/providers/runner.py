@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
 
 from buywise.schemas import ProductListing, RawSearchResult
 from buywise.categories import detect_categories
@@ -61,6 +62,9 @@ def _build_listings(
         source = infer_source(canonical_url, listing.source).lower()
         if not canonical_url or canonical_url in seen_urls:
             continue
+        if not source or source == "unknown":
+            continue
+            continue
 
         path = canonical_url.split("?", 1)[0].rstrip("/").lower()
         bad_path_markers = (
@@ -82,7 +86,12 @@ def _build_listings(
     # One result per shopping website. This is a hard diversity rule.
     # First remove obviously suspicious prices after computing a robust median.
     prices = sorted(item.price for item, _ in candidates if item.currency == "PKR")
-    median = prices[len(prices) // 2] if prices else None
+    # Use the upper quartile as a market-price anchor. This catches obvious
+    # false prices (e.g. PKR 26 or PKR 38,999 for a ~PKR 265k phone) without
+    # imposing a fixed minimum that would break clothing, groceries, etc.
+    upper_quartile = None
+    if prices:
+        upper_quartile = prices[min(len(prices) - 1, max(0, int(len(prices) * 0.75)))]
 
     listings: list[ProductListing] = []
     seen_sources: set[str] = set()
@@ -93,8 +102,8 @@ def _build_listings(
 
         # A price dramatically below the market cluster is not trusted.
         # It may be an accessory, deposit, used item, typo, or unrelated offer.
-        if median is not None and listing.currency == "PKR" and len(prices) >= 3:
-            if listing.price < median * 0.20:
+        if upper_quartile is not None and listing.currency == "PKR" and len(prices) >= 3:
+            if listing.price < upper_quartile * 0.25:
                 continue
 
         listing.verified = True
