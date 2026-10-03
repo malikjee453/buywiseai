@@ -4,6 +4,7 @@ from buywise.llm import LLMConfigurationError, get_llm
 from buywise.providers import run_search
 from buywise.schemas import ProductQuery
 
+
 st.set_page_config(page_title="BuyWiseAI", page_icon="🛒", layout="wide")
 
 st.title("🛒 BuyWiseAI")
@@ -12,15 +13,20 @@ st.caption("Multi-agent product search and price comparison — Stage 2")
 st.markdown(
     """
     ### Real product search
-    BuyWiseAI now fans your query out to multiple search providers in parallel,
-    extracts only results with a parseable currency price and URL, then removes
-    duplicate destination URLs.
+    Search multiple providers in parallel, keep results with a usable product URL
+    and parseable currency price, and remove duplicate destination URLs.
     """
 )
 
 query = st.text_input("Product query", "iPhone 15 128GB")
-country = st.selectbox("Country", ["Pakistan", "United States", "United Kingdom"])
-currency = st.selectbox("Display currency", ["PKR", "USD", "GBP"])
+country = st.selectbox(
+    "Country",
+    ["Pakistan", "United States", "United Kingdom"],
+)
+currency = st.selectbox(
+    "Display currency",
+    ["PKR", "USD", "GBP"],
+)
 max_results = st.slider("Results per provider", 5, 20, 10)
 
 with st.expander("Search provider status"):
@@ -42,7 +48,10 @@ if st.button("🔎 Search products", type="primary"):
                 currency=currency,
             )
 
-            with st.status("Searching multiple providers...", expanded=True) as status:
+            with st.status(
+                "Searching multiple providers...",
+                expanded=True,
+            ) as status:
                 raw_results, listings, errors = run_search(
                     parsed.normalized_query,
                     parsed.country,
@@ -60,12 +69,14 @@ if st.button("🔎 Search products", type="primary"):
 
             if not listings:
                 st.warning(
-                    "No priced product results were found. Add one or more provider "
-                    "API keys in Streamlit Secrets, or try a more specific product query."
+                    "No priced product results were found. Add one or more "
+                    "provider API keys in Streamlit Secrets, or try a more "
+                    "specific product query."
                 )
             else:
                 st.success(
-                    f"Found {len(listings)} results with a verified URL + parseable price."
+                    f"Found {len(listings)} results with a verified URL + "
+                    "parseable price."
                 )
 
                 rows = [
@@ -77,6 +88,7 @@ if st.button("🔎 Search products", type="primary"):
                     }
                     for item in listings
                 ]
+
                 st.dataframe(
                     rows,
                     use_container_width=True,
@@ -88,8 +100,15 @@ if st.button("🔎 Search products", type="primary"):
 
                 with st.expander("Raw provider results"):
                     st.write(f"Raw results received: {len(raw_results)}")
-                    st.json([item.model_dump() for item in raw_results[:100]])
+                    st.json(
+                        [
+                            item.model_dump()
+                            for item in raw_results[:100]
+                        ]
+                    )
 
+        except Exception as exc:
+            st.error(f"Search failed: {type(exc).__name__}: {exc}")
 
 try:
     get_llm()
