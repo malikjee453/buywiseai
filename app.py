@@ -77,9 +77,10 @@ if st.button("🔎 Search products", type="primary"):
 
             if not listings:
                 st.warning(
-                    "No priced product results were found. Add one or more "
-                    "provider API keys in Streamlit Secrets, or try a more "
-                    "specific product query."
+                    "No verified priced products were found. "
+                    "The free search backends returned no usable offers. "
+                    "For reliable shopping coverage, configure SERPER_API_KEY "
+                    "in Streamlit Secrets."
                 )
             else:
                 distinct_sources = len({item.source.strip().lower() for item in listings})
