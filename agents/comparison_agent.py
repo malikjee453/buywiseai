@@ -18,10 +18,31 @@ def _display_name(metadata, source):
     title = _clean(metadata.get("title"), "")
     if not title:
         return _clean(source, "Product")
-    # Search snippets can contain long navigation text. Keep the first useful
-    # product-looking phrase without inventing a name.
-    title = re.sub(r"\\s+", " ", title).strip()
-    return title[:120]
+
+    title = re.sub(r"\\\\s+", " ", title).strip()
+
+    # Remove common retailer snippet clutter while keeping the product name
+    # exactly grounded in the retrieved title.
+    title = re.sub(
+        r"^\\d+(?:\\.\\d+)?\\s+\\d+\\s+Reviews?\\s+",
+        "",
+        title,
+        flags=re.I,
+    )
+    title = re.sub(
+        r"\\s+Rs\\s+[\\d,]+(?:\\s+Rs\\s+[\\d,]+)?\\s+\\d+%\\s+OFF.*$",
+        "",
+        title,
+        flags=re.I,
+    )
+    title = re.sub(
+        r"\\s+PKR\\s+[\\d,]+.*$",
+        "",
+        title,
+        flags=re.I,
+    )
+
+    return title.strip()[:120] or _clean(source, "Product")
 
 
 def _record_to_product(item):
