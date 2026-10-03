@@ -1,35 +1,66 @@
 import streamlit as st
 
 def render_brand(name, tagline):
-    st.markdown(f'<div class="bw-brand"><span class="bw-name">BuyWise</span><span class="bw-ai">AI</span></div><div class="bw-tagline">{tagline}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="bw-brand"><span class="bw-name">BuyWise</span>'
+        f'<span class="bw-ai">AI</span></div>'
+        f'<div class="bw-tagline">{tagline}</div>',
+        unsafe_allow_html=True,
+    )
 
 def render_research_form():
-    query = st.text_area("What are you looking for?", placeholder="Example: I need a phone under PKR 50,000 with good battery life and camera.", height=110)
+    query = st.text_area(
+        "What are you looking for?",
+        placeholder=(
+            "Example: I need a phone under PKR 50,000 with good battery "
+            "life and camera."
+        ),
+        height=110,
+    )
     c1, c2, c3 = st.columns(3)
     with c1:
-        category = st.selectbox("Category", ["Smartphone", "Laptop", "Electronics", "Appliance", "Other"])
+        category = st.selectbox(
+            "Category",
+            ["Smartphone", "Laptop", "Electronics", "Appliance", "Other"],
+        )
     with c2:
-        budget = st.text_input("Budget (optional)", placeholder="e.g. PKR 50,000")
+        budget = st.text_input(
+            "Budget (optional)", placeholder="e.g. PKR 50,000"
+        )
     with c3:
-        language = st.selectbox("Answer language", ["English", "Urdu"])
+        language = st.selectbox(
+            "Answer language", ["English", "Urdu"]
+        )
     return query, category, budget, language
 
 def render_comparison_table(products):
     if not products:
         return
+
     rows = []
     for p in products:
         specs = p.get("key_specs", {})
-        source = p.get("source", "Source not available")
-        url = p.get("source_url", "")
-        source_cell = f"[{source}]({url})" if url else source
+        name = str(p.get("name", "Product"))
+        price = str(p.get("price", "Not available"))
+        battery = str(specs.get("battery", "Not available"))
+        camera = str(specs.get("camera", "Not available"))
+        source = str(p.get("source", "Source not available"))
+        url = str(p.get("source_url", "")).strip()
+
+        if url:
+            source_cell = f"[{source}]({url})"
+        else:
+            source_cell = source
+
         rows.append(
-            f"| {p.get('name', 'Product')} | {p.get('price', 'Not available in evidence')} | "
-            f"{specs.get('battery', 'Not available in evidence')} | "
-            f"{specs.get('camera', 'Not available in evidence')} | {source_cell} |"
+            f"| {name} | {price} | {battery} | {camera} | {source_cell} |"
         )
-    st.markdown("### Quick comparison")
-    st.markdown("| Product | Price | Battery | Camera | Source |\n|---|---:|---:|---:|---|\n" + "\n".join(rows))
+
+    st.markdown(
+        "| Smartphone | Price (PKR) | Battery | Camera | Source |\n"
+        "|---|---:|---|---:|---|\n"
+        + "\n".join(rows)
+    )
 
 def render_product_cards(products):
     if not products:
@@ -63,7 +94,10 @@ def render_product_cards(products):
 
             specs = p.get("key_specs", {})
             for key, label in labels.items():
-                st.write(f"**{label}:** {specs.get(key, 'Not available in evidence')}")
+                st.write(
+                    f"**{label}:** "
+                    f"{specs.get(key, 'Not available in evidence')}"
+                )
 
             if p.get("strengths"):
                 st.write("**Strengths**")
@@ -91,7 +125,9 @@ def render_product_cards(products):
                     url = item.get("url", "")
                     if url:
                         st.markdown(
-                            f'<a href="{url}" target="_blank" rel="noopener noreferrer">{source} → Open product/source</a>',
+                            f'<a href="{url}" target="_blank" '
+                            f'rel="noopener noreferrer">{source} → '
+                            f'Open product/source</a>',
                             unsafe_allow_html=True,
                         )
             else:
@@ -116,6 +152,5 @@ def render_sources(sources):
         else:
             st.markdown(
                 f'<div class="source-card"><b>{s["title"]}</b><br>'
-                f'{s["source"]} · {s["type"]}</div>',
-                unsafe_allow_html=True,
+                f'{s["source"]} · {s["type"]}</div>'
             )
