@@ -70,6 +70,12 @@ def _build_listings(
         if any(marker in path for marker in bad_path_markers):
             continue
 
+        # Reject obvious non-product landing pages and comparison pages even
+        # when the URL happens to contain the requested product.
+        path_tokens = set(re.findall(r"[a-z0-9]+", path))
+        if {"compare", "comparison", "search", "category", "categories"} & path_tokens:
+            continue
+
         seen_urls.add(canonical_url)
         candidates.append((listing, source))
 
