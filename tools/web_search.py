@@ -150,7 +150,9 @@ def _is_relevant_record(record, category="", query=""):
         str(record.get("metadata", {}).get("title", "")),
         str(record.get("text", "")),
     ]).lower()
-    terms = CATEGORY_TERMS.get(str(category or "").strip().lower())
+    category_key = str(category or "").strip().lower()
+    category_key = category_key.rstrip("s")
+    terms = CATEGORY_TERMS.get(category_key)
     if not terms:
         group = _query_group(query)
         terms = CATEGORY_TERMS.get(group)
@@ -338,7 +340,9 @@ def search_web(query, category=""):
     """Search supported shopping sources and return only retrieved live evidence."""
     budget = _budget_from_query(query)
     group = _query_group(query)
-    allowed_groups = SOURCE_GROUPS.get(str(category or "").strip().title())
+    category_key = str(category or "").strip().lower().rstrip("s")
+    category_name = category_key.title()
+    allowed_groups = SOURCE_GROUPS.get(category_name)
     if not allowed_groups:
         allowed_groups = {group}
     selected = [
