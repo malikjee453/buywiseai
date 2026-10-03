@@ -351,7 +351,7 @@ def _jsonld_product_records(html, source, page_url):
                     "specs": {},
                     "price_source": "jsonld_product_offer",
                 },
-            })
+            }))
 
     return results
 
