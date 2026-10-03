@@ -572,7 +572,8 @@ def _search_source_with_fallback(source, config, query, budget, group):
         for item in results
     }
 
-    fallback_limit = 3 if source in {"Daraz Pakistan", "Shophive", "Mega.pk", "iShopping"} else 5\n    for product_url, anchor in _search_engine_candidates(source, config, query)[:fallback_limit]:
+    fallback_limit = 3 if source in {"Daraz Pakistan", "Shophive", "Mega.pk", "iShopping"} else 5
+    for product_url, anchor in _search_engine_candidates(source, config, query)[:fallback_limit]:
         if product_url in existing_urls:
             continue
 
