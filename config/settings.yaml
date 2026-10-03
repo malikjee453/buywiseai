@@ -1,13 +1,15 @@
 app:
   name: BuyWiseAI
-  version: "0.1.0"
+  version: "0.2.0"
   default_country: Pakistan
   default_currency: PKR
   cache_ttl_seconds: 1800
+
 llm:
   model: openai/gpt-oss-120b
   temperature: 0.2
   max_tokens: 1200
+
 search:
   max_results_per_provider: 20
   request_timeout_seconds: 15
@@ -16,6 +18,13 @@ search:
   target_results: 10
   min_distinct_sources: 8
   max_results_per_source: 2
+  providers:
+    - serper
+    - serpapi
+    - tavily
+    - brave
+    - duckduckgo
+
 marketplaces:
   - amazon
   - ebay
@@ -26,5 +35,6 @@ marketplaces:
   - target
   - newegg
   - flipkart
+
 logging:
   level: INFO
