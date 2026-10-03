@@ -127,30 +127,26 @@ def build_comparison(query, structured, evidence):
         seen_urls.add(url)
         candidates.append(product)
 
-    # Preserve source diversity: take up to 3 products from each source first.
-    # Then fill remaining slots from unused products. This targets 12 products
-    # while never fabricating a source or URL.
+    # Maximize retailer diversity first: one product per source in round one,
+    # then a second product per source, and so on. Never invent a source or URL.
+    by_source = {}
+    for product in candidates:
+        by_source.setdefault(product["source"], []).append(product)
+
     selected = []
     selected_urls = set()
-    source_counts = {}
+    max_per_source = 3
 
-    for product in candidates:
-        source = product["source"]
-        if source_counts.get(source, 0) >= 3:
-            continue
-        selected.append(product)
-        selected_urls.add(product["source_url"])
-        source_counts[source] = source_counts.get(source, 0) + 1
-        if len(selected) >= 12:
-            break
-
-    if len(selected) < 12:
-        for product in candidates:
+    for round_index in range(max_per_source):
+        for source, source_products in by_source.items():
+            if round_index >= len(source_products):
+                continue
+            product = source_products[round_index]
             if product["source_url"] in selected_urls:
                 continue
             selected.append(product)
             selected_urls.add(product["source_url"])
             if len(selected) >= 12:
-                break
+                return selected
 
     return selected
