@@ -34,7 +34,14 @@ def run_buywise(query, category="", budget="", language="English"):
         and item.get("metadata", {}).get("currency") == "PKR"
     ]
 
-    retrieved = local_evidence + web_evidence
+    # Keep useful local RAG guidance, but never expose fictional demo records
+    # as evidence for real shopping research.
+    safe_local = [
+        item for item in local_evidence
+        if "demo" not in str(item.get("source", "")).lower()
+        and "demonstration" not in str(item.get("text", "")).lower()
+    ]
+    retrieved = safe_local + web_evidence
 
     evidence = verify_evidence(query, structured, retrieved)
     comparison = build_comparison(query, structured, evidence)
@@ -52,16 +59,13 @@ def run_buywise(query, category="", budget="", language="English"):
         ),
         "sources": [
             {
-                "title": e.get("metadata", {}).get(
-                    "title", e.get("source", "Source")
-                ),
-                "source": e.get("source", "Unknown"),
-                "type": e.get("source_type", "unknown"),
-                "url": e.get("metadata", {}).get("url", ""),
+                "title": p.get("name", "Product"),
+                "source": item.get("source", "Unknown"),
+                "type": "live_web",
+                "url": item.get("url", ""),
             }
-            for e in web_evidence
-            if e.get("source_type") == "live_web"
-            and e.get("metadata", {}).get("url")
-            and e.get("metadata", {}).get("title")
+            for p in comparison
+            for item in p.get("availability", [])
+            if item.get("url")
         ],
     }
