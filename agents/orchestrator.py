@@ -58,6 +58,7 @@ def run_buywise(query, category="", budget="", language="English"):
                 ),
                 "source": e.get("source", "Unknown"),
                 "type": e.get("source_type", "unknown"),
+                "url": e.get("metadata", {}).get("url", ""),
             }
             for e in retrieved
         ],
