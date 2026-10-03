@@ -28,12 +28,26 @@ class MarketplaceProvider(SearchProvider):
         # page title contains the product terms.
         search_query = f'site:{domain} {query} Pakistan'
 
-        with DDGS(timeout=8) as ddgs:
-            items = ddgs.text(
-                search_query,
-                region="pk-en",
-                max_results=max(3, min(max_results, 5)),
-            )
+        items = []
+        try:
+            with DDGS(timeout=8) as ddgs:
+                items = ddgs.text(
+                    search_query,
+                    region="pk-en",
+                    backend="auto",
+                    max_results=max(3, min(max_results, 5)),
+                )
+        except Exception:
+            try:
+                with DDGS(timeout=8) as ddgs:
+                    items = ddgs.text(
+                        search_query,
+                        region="wt-wt",
+                        backend="bing",
+                        max_results=max(3, min(max_results, 5)),
+                    )
+            except Exception:
+                return []
 
         return [
             RawSearchResult(
