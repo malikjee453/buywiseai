@@ -3,8 +3,8 @@ import re
 from core.llm import chat
 from core.prompts import EVIDENCE_PROMPT
 
-MAX_EVIDENCE_ITEMS = 10
-MAX_TEXT_CHARS = 420
+MAX_EVIDENCE_ITEMS = 6
+MAX_TEXT_CHARS = 180
 
 def _normalize_price(value):
     if value is None:
