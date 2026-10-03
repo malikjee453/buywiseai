@@ -25,7 +25,7 @@ PROVIDERS: list[SearchProvider] = [
 MAX_RESULTS_PER_SOURCE = 2
 TARGET_RESULTS = 10
 MIN_DISTINCT_SOURCES = 8
-MAX_SEARCH_ROUNDS = 3
+MAX_SEARCH_ROUNDS = 2
 
 
 def _query_variants(query: str) -> list[str]:
@@ -108,7 +108,7 @@ def _search_round(
     errors: list[str] = []
 
     with ThreadPoolExecutor(
-        max_workers=len(PROVIDERS),
+        max_workers=min(len(PROVIDERS), 6),
         thread_name_prefix="buywise-search",
     ) as pool:
         futures = {
