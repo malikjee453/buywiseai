@@ -54,6 +54,32 @@ def _normalize_product(product):
         "evidence_status": _clean_value(product.get("evidence_status")),
     }
 
+def _attach_source_links(products, compact):
+    """Attach only source URLs that were actually supplied with matching evidence."""
+    enriched = []
+    for product in products:
+        name = product.get("name", "").casefold()
+        links = []
+        seen_links = set()
+
+        for record in compact:
+            title = record.get("title", "").casefold()
+            if not name or not title:
+                continue
+            if name in title or title in name:
+                url = record.get("url", "")
+                if url and url not in seen_links:
+                    links.append({
+                        "source": record.get("source", "Source"),
+                        "url": url,
+                    })
+                    seen_links.add(url)
+
+        product["availability"] = links
+        enriched.append(product)
+
+    return enriched
+
 def build_comparison(query, structured, evidence):
     if not evidence:
         return []
@@ -75,6 +101,7 @@ def build_comparison(query, structured, evidence):
             "price": str(item.get("price", "not extracted")),
             "specs": metadata.get("specs", {}),
             "evidence": str(item.get("text", ""))[:350],
+            "url": str(metadata.get("url", "")),
         }
 
         key = (record["source"], record["title"], record["price"])
@@ -117,4 +144,4 @@ def build_comparison(query, structured, evidence):
         seen.add(key)
         cleaned.append(normalized)
 
-    return cleaned
+    return _attach_source_links(cleaned, compact)
