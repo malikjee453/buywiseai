@@ -791,7 +791,7 @@ def _search_engine_candidates(source, config, query):
                     elif "url=" in href and href.startswith("/url?"):
                         href = href.split("url=", 1)[1].split("&", 1)[0]
                     add_url(href, anchor)
-                    if len(candidates) >= 30:
+                    if len(candidates) >= 20:
                         return candidates
 
                 # Then scan the raw result HTML. This catches Google/Bing
@@ -965,7 +965,7 @@ def _verify_search_engine_products(source, config, query, budget, limit=6):
             return []
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(verify, item) for item in candidates[:limit * 8]]
+        futures = [pool.submit(verify, item) for item in candidates[:limit * 2]]
         for future in as_completed(futures):
             results.extend(future.result())
             if len(results) >= limit:
