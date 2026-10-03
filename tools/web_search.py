@@ -150,17 +150,34 @@ SOURCE_GROUPS = {
 }
 
 def _is_relevant_record(record, category="", query=""):
-    text = " ".join([
-        str(record.get("metadata", {}).get("title", "")),
-        str(record.get("text", "")),
-    ]).lower()
-    category_key = str(category or "").strip().lower()
-    category_key = category_key.rstrip("s")
+    metadata = record.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    title = str(metadata.get("title", "")).lower().strip()
+    text = str(record.get("text", "")).lower()
+
+    category_key = str(category or "").strip().lower().rstrip("s")
     terms = CATEGORY_TERMS.get(category_key)
     if not terms:
-        group = _query_group(query)
-        terms = CATEGORY_TERMS.get(group)
-    return not terms or any(term in text for term in terms)
+        terms = CATEGORY_TERMS.get(_query_group(query))
+
+    if not terms:
+        return True
+
+    # Product relevance must be determined primarily from the product title.
+    # Looking through the entire page allowed unrelated products (for example,
+    # clothing pages containing the word "phone" in navigation/footer text)
+    # to pass the filter.
+    title_match = any(term in title for term in terms)
+
+    if title_match:
+        return True
+
+    # If a title is unusually generic, allow the record only when the query's
+    # distinctive product terms occur near the beginning of the extracted text.
+    leading_text = text[:500]
+    return any(term in leading_text for term in terms)
 
 class _LinkParser(HTMLParser):
     def __init__(self):
