@@ -507,199 +507,115 @@ def _price_contexts(html, source, page_url, limit=12):
 
 
 def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
-    """Extract tightly paired product-card prices without requiring flat anchor text.
-
-    Retailer cards often wrap product titles in nested spans/images, so matching
-    the concatenated anchor text back into raw HTML is unreliable. Instead,
-    capture each anchor element directly and inspect only its nearby card region.
-    """
+    """Extract product-card evidence using prices close to the exact product link."""
+    parser = _LinkParser()
+    parser.feed(html)
     results = []
     seen = set()
 
-    anchor_pattern = re.compile(
-        r'<a\\b[^>]*?href=["\\\']([^"\\\']+)["\\\'][^>]*>(.*?)</a>',
-        re.I | re.S,
-    )
-
-    for match in anchor_pattern.finditer(html):
-        href, inner = match.group(1), match.group(2)
-        absolute = urljoin(page_url, unquote(href)).split("?", 1)[0].rstrip("/")
+    candidates = []
+    for href, anchor in parser.links:
+        if not href or not anchor:
+            continue
+        absolute = urljoin(page_url, href).split("?", 1)[0].rstrip("/")
+        anchor = _clean(unquote(anchor))
         if absolute in seen or not _is_product_url(source, absolute):
             continue
+        if not PRODUCT_WORDS.search(anchor):
+            continue
+        seen.add(absolute)
+        candidates.append((href, absolute, anchor))
 
-        anchor = _clean(unquote(re.sub(r"<[^>]+>", " ", inner)))
-        anchor = re.sub(r"\\s+", " ", anchor).strip()
-        if len(anchor) < 8 or not PRODUCT_WORDS.search(anchor):
+    for raw_href, absolute, anchor in candidates:
+        escaped_href = re.escape(raw_href)
+        match = re.search(
+            r"""href\s*=\s*["']""" + escaped_href + r"""["']""",
+            html,
+            re.I,
+        )
+        if not match:
+            match = re.search(re.escape(absolute), html, re.I)
+        if not match:
             continue
 
-        # Inspect the containing card area, not the whole listing page.
-        raw = html[max(0, match.start() - 900):min(len(html), match.end() + 1400)]
-        visible = _clean(unquote(re.sub(r"<[^>]+>", " ", raw)))
-        title_pos = visible.lower().find(anchor[:80].lower())
+        # Product cards normally keep title and price close together. A very
+        # large context window can accidentally capture tax, installment,
+        # shipping, or another product's price.
+        start = max(0, match.start() - 1200)
+        end = min(len(html), match.end() + 1800)
+        raw_context = html[start:end]
+        visible_context = _clean(
+            unquote(re.sub(r"<[^>]+>", " ", raw_context))
+        )
 
-        # If nested markup changed the exact text, use the center of the anchor
-        # as the association point.
-        if title_pos < 0:
-            title_pos = min(len(visible) - 1, 900)
-
-        local_prices = []
+        price_candidates = []
         for pm in re.finditer(
-            r"(?:PKR|Rs\\.?)[\\s\\u00a0]*[0-9][0-9,]*(?:\\.\\d+)?",
-            visible,
+            r"(?:PKR|Rs\.?)\s*[0-9][0-9,]*(?:\.\d+)?",
+            visible_context,
             re.I,
         ):
             value = _money(pm.group(0))
             if not value or value < 1000:
                 continue
 
-            distance = abs(pm.start() - title_pos)
-            window = visible[max(0, pm.start() - 180):min(len(visible), pm.end() + 220)].lower()
+            price_window = visible_context[
+                max(0, pm.start()-180):min(len(visible_context), pm.end()+220)
+            ].lower()
 
-            # Reject payment/tax/logistics amounts.
-            if any(token in window for token in (
-                "per month", "/month", "monthly", "installment", "emi",
-                "down payment", "advance payment", "deposit", "pta tax",
-                "tax:", "tax ", "shipping", "delivery", "save rs",
-                "discount", "off rs",
+            score = 100 - min(abs(pm.start() - visible_context.find(anchor[:50])), 800) / 20
+
+            # Prefer explicit product-price labels.
+            if re.search(r"\b(?:price|sale price|our price|current price)\b", price_window, re.I):
+                score += 30
+
+            # Reject or heavily penalize non-product amounts.
+            if any(token in price_window for token in (
+                "per month", "/month", "monthly", "installment",
+                "emi", "down payment", "advance payment", "deposit",
+                "pta tax", "tax", "shipping", "delivery",
             )):
-                continue
+                score -= 100
 
-            score = 1000 - distance
-            if re.search(r"\\b(?:price|sale price|our price|current price|now)\\b", window, re.I):
-                score += 120
-            if pm.start() >= title_pos:
-                score += 40
-            if budget and value <= budget:
-                score += 80
-            elif budget and value > budget:
-                score -= 250
+            if budget and value > budget:
+                score -= 80
 
-            local_prices.append((score, value))
+            price_candidates.append((score, value, pm.group(0)))
 
-        if not local_prices:
+        if not price_candidates:
             continue
 
-        local_prices.sort(reverse=True)
-        value = local_prices[0][1]
-        if budget and value > budget:
+        price_candidates.sort(key=lambda x: x[0], reverse=True)
+        _, chosen_value, chosen_price = price_candidates[0]
+
+        if budget and chosen_value > budget:
             continue
 
-        record = validate_record({
-            "text": f"{anchor} — PKR {value:,}",
-            "source": source,
-            "source_type": "live_web",
-            "price": f"PKR {value:,}",
-            "metadata": {
-                "title": anchor[:120],
-                "country": "Pakistan",
-                "currency": "PKR",
-                "url": absolute,
-                "specs": {},
-                "price_source": "listing_product_card",
-                "listing_verified": False,
-            },
-        })
+        context = f"{anchor} {chosen_price} {visible_context}"
+        record = _record_from_context(context, source, absolute)
         if not record:
             continue
 
+        clean_title = re.sub(
+            r"\s+(?:ask other llm models|refine your code|refine the code).*$",
+            "",
+            anchor,
+            flags=re.I,
+        ).strip()
+        if len(clean_title) < 8:
+            continue
+
+        record["metadata"]["title"] = clean_title[:120]
+        record["metadata"]["url"] = absolute
+        record["metadata"]["price_source"] = "listing_page_text"
+        record["metadata"]["listing_verified"] = False
         results.append(record)
-        seen.add(absolute)
+
         if len(results) >= limit:
             break
 
     return results
 
 
-
-def _verified_detail_records(html, source, product_url, detail_text, limit=2):
-    """Extract price evidence from the exact product page only.
-
-    Structured Product/Offer data is preferred. If absent, accept a visible
-    PKR/Rs price only when it is tightly associated with the product title
-    near the top of the exact detail page. Ignore installment, tax, shipping,
-    discount, review, and similar-product amounts.
-    """
-    records = []
-
-    # 1) Strongest evidence: Product/Offer JSON-LD.
-    for record in _jsonld_product_records(html, source, product_url):
-        metadata = record.get("metadata", {})
-        metadata["url"] = product_url
-        metadata["price_source"] = "jsonld_product_offer"
-        record["metadata"] = metadata
-        records.append(record)
-        if len(records) >= limit:
-            return records[:limit]
-
-    # 2) Strict visible price fallback.
-    text = _clean(detail_text or "")
-    if not text:
-        return []
-
-    slug = product_url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
-    slug_title = re.sub(r"[-_]+", " ", slug).strip()
-    slug_title = re.sub(r"\b(?:price|in|pakistan)\b", " ", slug_title, flags=re.I)
-    slug_title = _clean(slug_title)
-
-    title_match = re.search(re.escape(slug_title), text, re.I) if slug_title else None
-    title_pos = title_match.start() if title_match else 0
-
-    price_candidates = []
-    for match in re.finditer(r"(?:PKR|Rs\\.?)[\\s\\u00a0]*[0-9][0-9,]*(?:\\.\\d+)?", text, re.I):
-        value = _money(match.group(0))
-        if not value or value < 1000:
-            continue
-
-        distance = abs(match.start() - title_pos)
-        if distance > 1800:
-            continue
-
-        window = text[max(0, match.start()-260):min(len(text), match.end()+320)].lower()
-
-        reject_terms = (
-            "installment", "installments", "per month", "/month", "monthly",
-            "emi", "down payment", "advance payment", "deposit",
-            "pta tax", "tax:", "shipping", "delivery", "save rs",
-            "discount", "off rs", "similar mobile", "similar product",
-            "reviews", "review", "rating",
-        )
-        if any(term in window for term in reject_terms):
-            continue
-
-        score = 1000 - distance
-        if re.search(r"\\b(?:price|sale price|our price|current price|buy now)\\b", window, re.I):
-            score += 300
-        if match.start() >= title_pos:
-            score += 100
-        price_candidates.append((score, value, match))
-
-    if not price_candidates:
-        return []
-
-    price_candidates.sort(key=lambda item: (-item[0], item[1]))
-
-    for _, value, match in price_candidates[:limit]:
-        context = text[max(0, title_pos-120):min(len(text), match.end()+220)]
-        title = slug_title[:120] or _clean(context[:120])
-
-        record = validate_record({
-            "text": context[:900],
-            "source": source,
-            "source_type": "live_web",
-            "price": f"PKR {value:,}",
-            "metadata": {
-                "title": title,
-                "country": "Pakistan",
-                "currency": "PKR",
-                "url": product_url,
-                "specs": _extract_specs(text),
-                "price_source": "product_page_text",
-            },
-        })
-        if record:
-            records.append(record)
-
-    return records[:limit]
 
 def _search_source(source, config, query, budget, group):
     try:
@@ -738,9 +654,10 @@ def _search_source(source, config, query, budget, group):
                 detail_parser.feed(detail_html)
                 detail_text = _clean(" ".join(detail_parser.parts))
 
-                detail = _verified_detail_records(detail_html, source, product_url, detail_text, limit=1)
+                detail = _price_contexts(detail_html, source, product_url, limit=1)
                 if detail:
                     detail[0]["metadata"]["title"] = anchor[:120]
+                    detail[0]["metadata"]["price_source"] = "product_page_text"
                     detail[0]["text"] = detail_text[:1800]
                     _enrich_detail_metadata(detail[0], detail_text, source)
                     results.extend(detail)
@@ -825,11 +742,11 @@ def _search_engine_candidates(source, config, query):
 
 def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
     """Discover exact product URLs, then verify each exact detail page."""
-    if source not in {"Daraz Pakistan", "PriceOye", "Telemart", "Mega.pk", "Shophive", "iShopping"}:
+    if source not in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
         return []
 
     listing_url = config["search"]
-    if source in {"Daraz Pakistan", "PriceOye"}:
+    if source == "Daraz Pakistan":
         listing_url = config["search"].format(q=quote_plus(query))
 
     discovered = []
@@ -899,7 +816,9 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
             parser.feed(detail_html)
             detail_text = _clean(" ".join(parser.parts))
 
-            records = _verified_detail_records(detail_html, source, product_url, detail_text, limit=2)
+            records = _price_contexts(
+                detail_html, source, product_url, limit=2
+            )
             verified = []
             for record in records:
                 price = _money(record.get("price"))
@@ -910,6 +829,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
                     or record.get("metadata", {}).get("title")
                     or product_url.rsplit("/", 1)[-1][:120]
                 )
+                record["metadata"]["price_source"] = "product_page_text"
                 record["text"] = detail_text[:1800]
                 _enrich_detail_metadata(record, detail_text, source)
                 verified.append(record)
@@ -928,20 +848,21 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
             if len(results) >= limit:
                 break
 
-    # If exact product pages are blocked, keep only tightly matched
-    # product-card evidence. This is partial verification, not full
-    # product-page verification.
+    # If an exact product page blocks automated fetching, retain the product
+    # when the retailer catalog itself exposes its exact URL and price.
+    # Validation labels this evidence as partial rather than fully verified.
     if len(results) < limit and html:
+        listing_records = catalog_records
         existing_urls = {
             str(item.get("metadata", {}).get("url", ""))
             for item in results
         }
-        for record in catalog_records:
+        for record in listing_records:
             product_url = str(record.get("metadata", {}).get("url", ""))
             if product_url in existing_urls:
                 continue
-            record["metadata"]["price_source"] = "listing_product_card"
-            record["metadata"]["listing_verified"] = False
+            record["metadata"]["price_source"] = "listing_page_text"
+            record["metadata"]["listing_verified"] = True
             results.append(record)
             existing_urls.add(product_url)
             if len(results) >= limit:
@@ -952,7 +873,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
 def _search_source_with_fallback(source, config, query, budget, group):
     # These retailers need exact product-page discovery first. Their public
     # category/search HTML is often incomplete or JavaScript-heavy.
-    if source in {"Daraz Pakistan", "PriceOye", "Telemart", "Mega.pk", "Shophive", "iShopping"}:
+    if source in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
         results = _dedicated_catalog_candidates(source, config, query, budget, limit=6)
         if len(results) < 3:
             results.extend(_search_source(source, config, query, budget, group))
@@ -988,7 +909,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
         for item in results
     }
 
-    fallback_limit = 4 if source in {"Daraz Pakistan", "PriceOye", "Telemart", "Shophive", "Mega.pk", "iShopping"} else 5
+    fallback_limit = 4 if source in {"Daraz Pakistan", "Shophive", "Mega.pk", "iShopping"} else 5
     for product_url, anchor in _search_engine_candidates(source, config, query)[:fallback_limit]:
         if product_url in existing_urls:
             continue
@@ -998,7 +919,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
             detail_parser = _TextParser()
             detail_parser.feed(detail_html)
             detail_text = _clean(" ".join(detail_parser.parts))
-            detail = _verified_detail_records(detail_html, source, product_url, detail_text, limit=1)
+            detail = _price_contexts(detail_html, source, product_url, limit=1)
             if detail:
                 detail[0]["metadata"]["title"] = anchor[:120]
                 detail[0]["text"] = detail_text[:1800]
@@ -1019,23 +940,11 @@ def _search_source_with_fallback(source, config, query, budget, group):
 def search_web(query, category=""):
     """Search shopping sources in fast priority passes and return live evidence.
 
-    Tool/agent frameworks can occasionally pass a one-item list instead of a
-    string. Normalize those inputs here so a malformed tool argument cannot
-    crash the entire research workflow.
+    Pass 1 focuses on Pakistan's main shopping platforms. Secondary and
+    international sources are only queried when the primary pass does not
+    produce enough useful records. This keeps common Pakistan searches fast
+    while still giving BuyWiseAI broad coverage when needed.
     """
-    if isinstance(query, (list, tuple)):
-        query = " ".join(str(item).strip() for item in query if item is not None).strip()
-    elif query is None:
-        query = ""
-    else:
-        query = str(query).strip()
-
-    if isinstance(category, (list, tuple)):
-        category = " ".join(str(item).strip() for item in category if item is not None).strip()
-    elif category is None:
-        category = ""
-    else:
-        category = str(category).strip()
     budget = _budget_from_query(query)
     group = _query_group(query)
     category_key = str(category or "").strip().lower().rstrip("s")
