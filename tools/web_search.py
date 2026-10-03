@@ -16,8 +16,8 @@ SOURCE_CATALOG = {
     "OLX Pakistan": {"base": "https://www.olx.com.pk", "search": "https://www.olx.com.pk/items/q-{q}", "groups": {"electronics", "home", "general"}},
     "PriceOye": {"base": "https://priceoye.pk", "search": "https://priceoye.pk/mobiles", "groups": {"electronics"}},
     "Telemart": {"base": "https://www.telemart.pk", "search": "https://www.telemart.pk/collections/smart-phones", "groups": {"electronics", "home", "general"}},
-    "Shophive": {"base": "https://www.shophive.com", "search": "https://www.shophive.com/mobile-phones", "groups": {"electronics", "home", "general"}},
-    "Mega.pk": {"base": "https://www.mega.pk", "search": "https://www.mega.pk/mobiles/", "groups": {"electronics"}},
+    "Shophive": {"base": "https://www.shophive.com", "search": "https://www.shophive.com/catalogsearch/result/?q={q}", "groups": {"electronics", "home", "general"}},
+    "Mega.pk": {"base": "https://www.mega.pk", "search": "https://www.mega.pk/search/{q}/", "groups": {"electronics"}},
     "iShopping": {"base": "https://www.ishopping.pk", "search": "https://www.ishopping.pk/mobiles", "groups": {"electronics"}},
     "HomeShopping": {"base": "https://www.homeshopping.pk", "search": "https://www.homeshopping.pk/mobiles", "groups": {"electronics", "home", "general"}},
     "Galaxy": {"base": "https://www.galaxy.pk", "search": "https://www.galaxy.pk/search?q={q}", "groups": {"electronics"}},
@@ -400,6 +400,33 @@ def _price_contexts(html, source, page_url, limit=12):
             break
     return results
 
+def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
+    """Extract product evidence directly from a retailer listing/search page."""
+    parser = _LinkParser()
+    parser.feed(html)
+    results = []
+    seen = set()
+    for href, anchor in parser.links:
+        absolute = urljoin(page_url, href)
+        anchor = _clean(anchor)
+        if not anchor or absolute in seen or not _is_product_url(source, absolute):
+            continue
+        if not PRODUCT_WORDS.search(anchor):
+            continue
+        seen.add(absolute)
+        # Find a short price/spec context around the product title in page text.
+        record = _record_from_context(anchor + " " + html[max(0, html.find(anchor)-500):html.find(anchor)+1200], source, absolute)
+        if record:
+            price = _money(record.get("price"))
+            if budget and price and price > budget:
+                continue
+            record["metadata"]["title"] = anchor[:120]
+            results.append(record)
+        if len(results) >= limit:
+            break
+    return results
+
+
 def _search_source(source, config, query, budget, group):
     try:
         q = quote_plus(query)
@@ -545,7 +572,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
         for item in results
     }
 
-    for product_url, anchor in _search_engine_candidates(source, config, query)[:5]:
+    fallback_limit = 3 if source in {"Daraz Pakistan", "Shophive", "Mega.pk", "iShopping"} else 5\n    for product_url, anchor in _search_engine_candidates(source, config, query)[:fallback_limit]:
         if product_url in existing_urls:
             continue
 
