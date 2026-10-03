@@ -848,11 +848,16 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
                 price = _money(record.get("price"))
                 if budget and price and price > budget:
                     continue
-                record["metadata"]["title"] = (
-                    _clean(anchor)[:120]
-                    or record.get("metadata", {}).get("title")
-                    or product_url.rsplit("/", 1)[-1][:120]
+                # Never replace the retailer's product identity with a
+                # search-result anchor. Anchors can be stale or unrelated
+                # (for example "Itel" linking to an Honor page).
+                detail_title = _clean(
+                    record.get("metadata", {}).get("title", "")
                 )
+                if not detail_title:
+                    continue
+                record["metadata"]["title"] = detail_title[:120]
+                record["metadata"]["url"] = product_url
                 record["metadata"]["price_source"] = "product_page_text"
                 record["text"] = detail_text[:1800]
                 _enrich_detail_metadata(record, detail_text, source)
