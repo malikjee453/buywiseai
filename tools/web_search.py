@@ -206,6 +206,66 @@ def _search_source(source, config, query, budget, group):
     except Exception:
         return []
 
+
+def _search_engine_candidates(source, config, query):
+    """Discover indexed product pages when a retailer's search page is JS/blocking."""
+    search_url = (
+        "https://www.google.com/search?q="
+        + quote_plus(f"site:{config['base'].replace('https://','').replace('www.','')} {query}")
+    )
+    try:
+        html = _fetch(search_url, timeout=8)
+        parser = _LinkParser()
+        parser.feed(html)
+        candidates = []
+        seen = set()
+        for href, anchor in parser.links:
+            if not href or not anchor:
+                continue
+            absolute = href
+            if absolute.startswith("/url?q="):
+                absolute = absolute.split("/url?q=", 1)[1].split("&", 1)[0]
+            if not absolute.startswith("http"):
+                continue
+            if config["base"].split("//", 1)[-1].replace("www.", "") not in absolute.replace("www.", ""):
+                continue
+            if absolute in seen:
+                continue
+            seen.add(absolute)
+            candidates.append((absolute, anchor))
+        return candidates[:10]
+    except Exception:
+        return []
+
+def _search_source_with_fallback(source, config, query, budget, group):
+    results = _search_source(source, config, query, budget, group)
+    if results:
+        return results
+
+    results = []
+    for product_url, anchor in _search_engine_candidates(source, config, query):
+        try:
+            detail_html = _fetch(product_url, timeout=7)
+            detail = _price_contexts(detail_html, source, product_url, limit=1)
+            if detail:
+                detail[0]["metadata"]["title"] = anchor[:120]
+                results.extend(detail)
+        except Exception:
+            continue
+        if len(results) >= 6:
+            break
+
+    if not results:
+        return _price_contexts("", source, config["base"], limit=0)
+
+    filtered = []
+    for record in results:
+        price = _money(record.get("price"))
+        if budget and price and price > budget:
+            continue
+        filtered.append(record)
+    return filtered[:6]
+
 def search_web(query):
     """Search supported shopping sources and return only retrieved live evidence."""
     budget = _budget_from_query(query)
@@ -219,7 +279,7 @@ def search_web(query):
     # Six concurrent fetches keeps multi-source search practical on Streamlit Cloud.
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {
-            pool.submit(_search_source, name, cfg, query, budget, group): name
+            pool.submit(_search_source_with_fallback, name, cfg, query, budget, group): name
             for name, cfg in selected
         }
         for future in as_completed(futures):
