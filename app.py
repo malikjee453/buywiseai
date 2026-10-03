@@ -83,7 +83,7 @@ if st.button("🔎 Search products", type="primary"):
                     "in Streamlit Secrets."
                 )
             else:
-                distinct_sources = len({item.source.strip().lower() for item in listings})
+                distinct_sources = len({__import__("urllib.parse", fromlist=["urlsplit"]).urlsplit(str(item.url)).netloc.lower().removeprefix("www.") for item in listings})
                 st.success(
                     f"Found {len(listings)} verified priced results from "
                     f"{distinct_sources} shopping sources."
