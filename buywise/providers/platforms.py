@@ -27,6 +27,13 @@ PLATFORMS = {
     },
     "fashion_beauty": {
         "Sapphire": "sapphireonline.pk",
+        "Limelight": "limelight.pk",
+        "Gul Ahmed": "gulahmedshop.com",
+        "Maria B": "mariab.pk",
+        "Nishat Linen": "nishatlinen.com",
+        "Alkaram Studio": "alkaramstudio.com",
+        "Ethnic": "ethnic.pk",
+        "Bonanza Satrangi": "bonanzasatrangi.com",
         "Khaadi": "khaadi.com",
         "Junaid Jamshed": "junaidjamshed.com",
         "Outfitters": "outfitters.com.pk",
