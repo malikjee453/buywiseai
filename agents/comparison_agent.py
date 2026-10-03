@@ -58,11 +58,39 @@ def build_comparison(query, structured, evidence):
     if not evidence:
         return []
 
+    compact = []
+    seen = set()
+
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        record = {
+            "title": str(metadata.get("title") or item.get("source", "Product"))[:120],
+            "source": str(item.get("source", "Unknown")),
+            "price": str(item.get("price", "not extracted")),
+            "specs": metadata.get("specs", {}),
+            "evidence": str(item.get("text", ""))[:350],
+        }
+
+        key = (record["source"], record["title"], record["price"])
+        if key in seen:
+            continue
+        seen.add(key)
+        compact.append(record)
+
+        if len(compact) >= 10:
+            break
+
     raw = chat(
         COMPARISON_PROMPT,
         f"Request: {query}\n"
         f"Requirements: {json.dumps(structured, ensure_ascii=False)}\n"
-        f"Evidence: {json.dumps(evidence, ensure_ascii=False)}"
+        f"Evidence records: {json.dumps(compact, ensure_ascii=False)}"
     )
 
     try:
