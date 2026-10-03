@@ -48,6 +48,8 @@ def _build_listings(
     seen_urls: set[str] = set()
     source_counts: dict[str, int] = {}
 
+    candidates: list[tuple[ProductListing, str]] = []
+
     for item in all_raw:
         relevant, _ = is_relevant_product(original_query, item)
         if not relevant:
@@ -62,16 +64,37 @@ def _build_listings(
 
         if not canonical_url or canonical_url in seen_urls:
             continue
-        if source_counts.get(source, 0) >= MAX_RESULTS_PER_SOURCE:
+
+        # Search/category landing pages are not individual offers. They often
+        # expose one generic price that can create misleading duplicates.
+        path = canonical_url.split("?", 1)[0].rstrip("/").lower()
+        category_markers = (
+            "/search", "/category", "/categories", "/collections",
+            "/shop", "/mens", "/womens", "/women", "/men",
+        )
+        if any(marker in path for marker in category_markers):
             continue
 
-        listing.verified = True
-        listing.verification_note = (
-            "Matched requested product/spec evidence and has a parseable price + URL."
-        )
-        seen_urls.add(canonical_url)
-        source_counts[source] = source_counts.get(source, 0) + 1
-        listings.append(listing)
+        candidates.append((listing, source))
+
+    # Prefer source diversity first. This prevents two Daraz/category pages
+    # from consuming the result slots before other stores are considered.
+    for preferred_round in (1, 2):
+        for listing, source in candidates:
+            if source_counts.get(source, 0) >= preferred_round:
+                continue
+
+            canonical_url = normalize_url(str(listing.url))
+            if canonical_url in seen_urls:
+                continue
+
+            listing.verified = True
+            listing.verification_note = (
+                "Matched requested product/spec evidence and has a parseable price + URL."
+            )
+            seen_urls.add(canonical_url)
+            source_counts[source] = source_counts.get(source, 0) + 1
+            listings.append(listing)
 
     return listings
 
