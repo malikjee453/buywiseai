@@ -301,8 +301,8 @@ def _search_source(source, config, query, budget, group):
 
         results = []
         # Try more candidates because some retailer pages contain accessories
-    # before the actual smartphone products.
-    for product_url, anchor in candidates[:20]:
+        # before the actual smartphone products.
+        for product_url, anchor in candidates[:20]:
             try:
                 detail_html = _fetch(product_url, timeout=6)
 
