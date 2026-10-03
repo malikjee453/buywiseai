@@ -3,7 +3,6 @@ from core.config import APP_NAME, APP_TAGLINE
 from core.llm import llm_available
 from ui.styles import inject_styles
 from ui.components import render_brand, render_research_form, render_comparison_table
-from agents.orchestrator import run_buywise
 
 st.set_page_config(page_title="BuyWise AI", page_icon="🛒", layout="wide")
 inject_styles()
@@ -30,6 +29,7 @@ if st.button("🔎 Research", type="primary"):
     else:
         with st.spinner("BuyWise AI is researching and verifying evidence..."):
             try:
+                from agents.orchestrator import run_buywise
                 st.session_state.result = run_buywise(
                     query, category, budget, language
                 )
@@ -41,10 +41,6 @@ result = st.session_state.result
 if result:
     st.divider()
     st.markdown("## Research Result")
-
-    # Buyer-facing output is intentionally limited to one simple table.
-    # The source name is a clickable link to the exact URL retrieved
-    # from the evidence records.
     comparison = result.get("comparison", [])
     if comparison:
         render_comparison_table(comparison)
