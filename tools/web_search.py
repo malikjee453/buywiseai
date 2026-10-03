@@ -1,20 +1,36 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from html.parser import HTMLParser
-from urllib.parse import urljoin
+from urllib.parse import quote_plus, urljoin
 from urllib.request import Request, urlopen
 import re
 
-SOURCES = {
-    "PriceOye": "https://priceoye.pk/mobile",
+# Supported shopping sources. A source is only returned when BuyWise can
+# actually retrieve a product/listing record from it; no URL or product is invented.
+SOURCE_CATALOG = {
+    "AliExpress": {"base": "https://www.aliexpress.com", "search": "https://www.aliexpress.com/w/wholesale-{q}.html", "groups": {"electronics", "general"}},
+    "Temu": {"base": "https://www.temu.com", "search": "https://www.temu.com/search_result.html?search_key={q}", "groups": {"electronics", "general", "home"}},
+    "Daraz Pakistan": {"base": "https://www.daraz.pk", "search": "https://www.daraz.pk/catalog/?q={q}", "groups": {"electronics", "fashion", "grocery", "home", "general"}},
+    "Markaz App": {"base": "https://www.markaz.app", "search": "https://www.markaz.app/shop?search={q}", "groups": {"electronics", "fashion", "grocery", "home", "general"}},
+    "OLX Pakistan": {"base": "https://www.olx.com.pk", "search": "https://www.olx.com.pk/items/q-{q}", "groups": {"electronics", "home", "general"}},
+    "PriceOye": {"base": "https://priceoye.pk", "search": "https://priceoye.pk/mobiles", "groups": {"electronics"}},
+    "Telemart": {"base": "https://www.telemart.pk", "search": "https://www.telemart.pk/catalogsearch/result/?q={q}", "groups": {"electronics", "home", "general"}},
+    "Shophive": {"base": "https://www.shophive.com", "search": "https://www.shophive.com/catalogsearch/result/?q={q}", "groups": {"electronics", "home", "general"}},
+    "Naheed": {"base": "https://www.naheed.pk", "search": "https://www.naheed.pk/catalogsearch/result/?q={q}", "groups": {"grocery", "home", "general"}},
+    "Foodpanda / Pandamart": {"base": "https://www.foodpanda.pk", "search": "https://www.foodpanda.pk/contents/pandamart", "groups": {"grocery"}},
+    "Sapphire": {"base": "https://pk.sapphireonline.pk", "search": "https://pk.sapphireonline.pk/search?q={q}", "groups": {"fashion"}},
+    "Khaadi": {"base": "https://pk.khaadi.com", "search": "https://pk.khaadi.com/search?q={q}", "groups": {"fashion"}},
+    "Junaid Jamshed (J.)": {"base": "https://www.junaidjamshed.com", "search": "https://www.junaidjamshed.com/catalogsearch/result/?q={q}", "groups": {"fashion", "general"}},
 }
 
-PRODUCT_PATH = re.compile(r"^/mobiles/[^/]+/[^/]+/?$", re.I)
 PRODUCT_WORDS = re.compile(
     r"(iphone|galaxy|redmi|vivo|oppo|tecno|infinix|xiaomi|realme|motorola|honor|"
-    r"oneplus|pixel|itel|nokia|dcode|sparx|xmobile|phone|mobile)",
+    r"oneplus|pixel|itel|nokia|dcode|sparx|xmobile|phone|mobile|laptop|tablet|"
+    r"headphone|earbuds|watch|tv|shirt|dress|kurta|lawn|shoe|sandal|grocery|"
+    r"rice|milk|oil|atta|cosmetic|perfume|skincare)",
     re.I,
 )
 
-def _fetch(url, timeout=10):
+def _fetch(url, timeout=8):
     req = Request(url, headers={"User-Agent": "Mozilla/5.0 BuyWiseAI/1.0"})
     with urlopen(req, timeout=timeout) as response:
         return response.read().decode("utf-8", errors="ignore")
@@ -27,10 +43,25 @@ def _money(value):
     return int(digits) if digits else None
 
 def _budget_from_query(query):
-    matches = re.findall(r"(?:under|below|less than|upto|up to|budget)\D{0,20}(?:PKR|Rs\.?|)\s*([0-9][0-9,]*)", query, re.I)
+    matches = re.findall(
+        r"(?:under|below|less than|upto|up to|budget)\D{0,20}(?:PKR|Rs\.?|)\s*([0-9][0-9,]*)",
+        query, re.I
+    )
     values = [_money(x) for x in matches]
     values = [x for x in values if x]
     return max(values) if values else None
+
+def _query_group(query):
+    q = query.lower()
+    if any(x in q for x in ("dress", "shirt", "kurta", "lawn", "abaya", "shoe", "sandal", "fashion", "clothes")):
+        return "fashion"
+    if any(x in q for x in ("grocery", "food", "milk", "atta", "rice", "oil", "snack")):
+        return "grocery"
+    if any(x in q for x in ("home", "appliance", "fridge", "refrigerator", "washing machine", "microwave")):
+        return "home"
+    if any(x in q for x in ("phone", "mobile", "laptop", "tablet", "earbuds", "headphone", "camera", "tv", "electronics")):
+        return "electronics"
+    return "general"
 
 def _extract_specs(text):
     specs = {}
@@ -54,40 +85,27 @@ def _extract_specs(text):
             specs[key] = value
     return specs
 
-def _product_detail(url, source):
-    try:
-        html = _fetch(url)
-        parser = _TextParser()
-        parser.feed(html)
-        text = _clean(" ".join(parser.parts))
-
-        title_match = re.search(r"(?:logo|Image: badges logo)?\s*([A-Z][A-Za-z0-9+._()\- ]{2,80}?)(?:\s+Price in Pakistan|\s+Price|\s+\d+\.\d+\s*\|)", text, re.I)
-        title = title_match.group(1).strip() if title_match else ""
-        price_match = re.search(r"(?:Rs\s*|PKR\s*)([0-9][0-9,]*)", text, re.I)
-        specs = _extract_specs(text)
-
-        if not title or not price_match:
-            return None
-
-        price = _money(price_match.group(1))
-        if not price:
-            return None
-
-        return {
-            "text": text[:1200],
-            "source": source,
-            "source_type": "live_web",
-            "price": f"PKR {price:,}",
-            "metadata": {
-                "title": title[:120],
-                "country": "Pakistan",
-                "currency": "PKR",
-                "url": url,
-                "specs": specs,
-            },
-        }
-    except Exception:
+def _record_from_context(context, source, url):
+    price_match = re.search(r"(?:Rs\.?|PKR|\$)\s*([0-9][0-9,]*(?:\.\d+)?)", context, re.I)
+    if not price_match:
         return None
+    price = _money(price_match.group(1))
+    if not price:
+        return None
+    title = _clean(context[:140])
+    return {
+        "text": context[:900],
+        "source": source,
+        "source_type": "live_web",
+        "price": f"PKR {price:,}",
+        "metadata": {
+            "title": title[:120],
+            "country": "Pakistan" if source not in ("AliExpress", "Temu") else "international",
+            "currency": "PKR" if "PKR" in context.upper() or "Rs" in context else "source_currency",
+            "url": url,
+            "specs": _extract_specs(context),
+        },
+    }
 
 class _LinkParser(HTMLParser):
     def __init__(self):
@@ -122,74 +140,90 @@ class _TextParser(HTMLParser):
         if text:
             self.parts.append(text)
 
-def search_web(query):
-    """Retrieve product-level Pakistan shopping evidence with direct links."""
+def _price_contexts(html, source, page_url, limit=12):
+    parser = _TextParser()
+    parser.feed(html)
+    text = _clean(" ".join(parser.parts))
     results = []
-    budget = _budget_from_query(query)
+    for match in re.finditer(r"(?:Rs\.?|PKR|\$)\s*[0-9][0-9,]*(?:\.\d+)?", text, re.I):
+        context = text[max(0, match.start()-220):min(len(text), match.end()+260)]
+        if not PRODUCT_WORDS.search(context):
+            continue
+        record = _record_from_context(context, source, page_url)
+        if record:
+            results.append(record)
+        if len(results) >= limit:
+            break
+    return results
 
+def _search_source(source, config, query, budget, group):
     try:
-        html = _fetch(SOURCES["PriceOye"])
-        source = "PriceOye"
+        q = quote_plus(query)
+        url = config["search"].format(q=q)
+        html = _fetch(url)
 
         link_parser = _LinkParser()
         link_parser.feed(html)
 
         candidates = []
-        seen_urls = set()
-        for href, anchor_text in link_parser.links:
-            absolute = urljoin(SOURCES["PriceOye"], href)
-            path = re.sub(r"https?://[^/]+", "", absolute)
-            if not PRODUCT_PATH.match(path):
+        seen = set()
+        for href, anchor in link_parser.links:
+            absolute = urljoin(config["base"], href)
+            if absolute in seen or not anchor.strip():
                 continue
-            if absolute in seen_urls:
+            combined = anchor + " " + absolute
+            if not PRODUCT_WORDS.search(combined):
                 continue
-            if not PRODUCT_WORDS.search(anchor_text + " " + absolute):
+            if not re.search(r"(product|item|mobile|phone|laptop|shirt|dress|shoe|p/|/dp/|/product|/mobiles/)", absolute, re.I):
                 continue
-            seen_urls.add(absolute)
-            candidates.append(absolute)
+            seen.add(absolute)
+            candidates.append((absolute, anchor))
 
-        # Fetch a small number of real product pages to keep latency and TPM controlled.
-        for product_url in candidates[:18]:
-            record = _product_detail(product_url, source)
-            if not record:
+        results = []
+        for product_url, anchor in candidates[:10]:
+            try:
+                detail_html = _fetch(product_url, timeout=6)
+                detail = _price_contexts(detail_html, source, product_url, limit=1)
+                if detail:
+                    detail[0]["metadata"]["title"] = anchor[:120]
+                    results.extend(detail)
+            except Exception:
                 continue
-            if budget and _money(record["price"]) and _money(record["price"]) > budget:
-                continue
-            results.append(record)
-            if len(results) >= 12:
+            if len(results) >= 8:
                 break
 
-        # Fallback to category-page records if product links could not be parsed.
         if not results:
-            parser = _TextParser()
-            parser.feed(html)
-            text = _clean(" ".join(parser.parts))
-            for match in re.finditer(r"(?:Rs\.?|PKR)\s*([0-9,]+)", text, re.I):
-                start = max(0, match.start() - 220)
-                end = min(len(text), match.end() + 220)
-                context = text[start:end]
-                if not PRODUCT_WORDS.search(context):
+            results = _price_contexts(html, source, url, limit=8)
+
+        filtered = []
+        for record in results:
+            if budget:
+                price = _money(record.get("price"))
+                if price and price > budget:
                     continue
-                price = _money(match.group(1))
-                if budget and price and price > budget:
-                    continue
-                results.append({
-                    "text": context[:700],
-                    "source": source,
-                    "source_type": "live_web",
-                    "price": f"PKR {price:,}" if price else f"PKR {match.group(1)}",
-                    "metadata": {
-                        "title": context[:100],
-                        "country": "Pakistan",
-                        "currency": "PKR",
-                        "url": SOURCES["PriceOye"],
-                        "specs": _extract_specs(context),
-                    },
-                })
-                if len(results) >= 12:
-                    break
+            filtered.append(record)
+        return filtered[:8]
     except Exception:
-        pass
+        return []
+
+def search_web(query):
+    """Search supported shopping sources and return only retrieved live evidence."""
+    budget = _budget_from_query(query)
+    group = _query_group(query)
+    selected = [
+        (name, cfg) for name, cfg in SOURCE_CATALOG.items()
+        if group in cfg["groups"]
+    ]
+
+    results = []
+    # Six concurrent fetches keeps multi-source search practical on Streamlit Cloud.
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {
+            pool.submit(_search_source, name, cfg, query, budget, group): name
+            for name, cfg in selected
+        }
+        for future in as_completed(futures):
+            results.extend(future.result())
 
     unique = []
     seen = set()
@@ -198,9 +232,10 @@ def search_web(query):
             item.get("source"),
             item.get("metadata", {}).get("url"),
             item.get("price"),
+            item.get("metadata", {}).get("title"),
         )
         if key in seen:
             continue
         seen.add(key)
         unique.append(item)
-    return unique
+    return unique[:40]
