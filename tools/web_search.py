@@ -850,9 +850,12 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
                 detail_html, source, product_url, limit=2
             )
             verified = []
+            group = _query_group(query)
             for record in records:
                 price = _money(record.get("price"))
-                if budget and price and price > budget:
+                if price is None:
+                    continue
+                if budget and price > budget:
                     continue
                 # Never replace the retailer's product identity with a
                 # search-result anchor. Anchors can be stale or unrelated
@@ -888,7 +891,23 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
     # it instead of returning a misleading "partially verified" price.
     return results[:limit]
 
-def _verify_search_engine_products(source, config, query, budget, limit=6):
+def _matches_query_group(title, detail_text, group):
+    """Reject products whose identity does not match the requested category."""
+    haystack = _clean(f"{title} {detail_text}").lower()
+    terms = CATEGORY_TERMS.get(group, ())
+    if group == "smartphone":
+        return any(term in haystack for term in terms) and not any(
+            term in haystack for term in ("smart watch", "smartwatch", "watch")
+        )
+    if group == "laptop":
+        return any(term in haystack for term in terms)
+    if group == "fashion":
+        return any(term in haystack for term in terms)
+    if group == "appliance":
+        return any(term in haystack for term in terms)
+    return True
+
+def _verify_search_engine_products(source, config, query, budget, limit=10):
     """Use Google/Bing discovery first, then verify each exact product page."""
     candidates = _search_engine_candidates(source, config, query)
     results = []
@@ -917,6 +936,8 @@ def _verify_search_engine_products(source, config, query, budget, limit=6):
                 )
                 if not detail_title:
                     continue
+                if not _matches_query_group(detail_title, detail_text, group):
+                    continue
 
                 record["metadata"]["title"] = detail_title[:120]
                 record["metadata"]["url"] = product_url
@@ -943,7 +964,7 @@ def _search_source_with_fallback(source, config, query, budget, group):
     # retailer search/category pages are often incomplete or JavaScript-only.
     # Every discovered URL still has to pass exact product-page verification.
     results = _verify_search_engine_products(
-        source, config, query, budget, limit=6
+        source, config, query, budget, limit=10
     )
 
     # Retailer-specific discovery is a secondary path used to find products
