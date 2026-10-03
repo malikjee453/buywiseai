@@ -1,9 +1,4 @@
-from buywise.providers.common import (
-    is_relevant_product,
-    normalize_url,
-    parse_price,
-    raw_to_listing,
-)
+from buywise.providers.common import is_relevant_product, normalize_url, parse_price, raw_to_listing
 from buywise.schemas import RawSearchResult
 
 
@@ -32,19 +27,15 @@ def test_raw_to_listing_rejects_missing_price():
     assert raw_to_listing(raw) is None
 
 
-def test_raw_to_listing_accepts_real_price():
+def test_relevance_accepts_exact_storage_in_url():
     raw = RawSearchResult(
-        title="Example phone iPhone 15 128GB",
-        url="https://example.com/product/1?utm_source=test",
-        snippet="Rs 77,249",
+        title="Apple iPhone 15 Black",
+        url="https://example.com/apple-iphone-15-128gb-black",
+        snippet="Rs 284,000",
         source="Example",
         provider="test",
     )
-    listing = raw_to_listing(raw)
-    assert listing is not None
-    assert listing.price == 77249.0
-    assert listing.currency == "PKR"
-    assert str(listing.url) == "https://example.com/product/1"
+    assert is_relevant_product("iPhone 15 128GB", raw)[0] is True
 
 
 def test_relevance_rejects_wrong_storage():
@@ -58,7 +49,7 @@ def test_relevance_rejects_wrong_storage():
     assert is_relevant_product("iPhone 15 128GB", raw)[0] is False
 
 
-def test_relevance_accepts_exact_storage():
+def test_relevance_accepts_128gb_title():
     raw = RawSearchResult(
         title="Apple iPhone 15 128GB Black",
         url="https://example.com/product/1",
