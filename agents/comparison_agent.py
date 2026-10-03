@@ -81,6 +81,8 @@ def _attach_source_links(products, compact):
                     seen_links.add(url)
 
         product["availability"] = links
+        product["source"] = links[0]["source"] if links else "Source not available"
+        product["source_url"] = links[0]["url"] if links else ""
         enriched.append(product)
 
     return enriched
