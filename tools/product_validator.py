@@ -14,11 +14,15 @@ def validate_record(record):
     url = str(metadata.get("url", "")).strip()
     price = money(record.get("price"))
     currency = str(metadata.get("currency", "")).upper()
+    source = str(record.get("source", "")).strip()
+    source_type = str(record.get("source_type", "")).strip().lower()
 
     checks = {
         "product_url": bool(url and url.startswith("http")),
         "title": len(title) >= 3,
         "price": bool(price and price >= 1000),
+        "source": bool(source),
+        "live_source": source_type == "live_web",
     }
 
     # A price is considered source-verified only when the extractor explicitly
@@ -46,6 +50,11 @@ def validate_record(record):
         "checks": checks,
         "price_verified": checks["price_verified"],
         "specs_verified": checks["specs_present"],
+        "source_verified": checks["product_url"] and checks["source"] and checks["live_source"],
+        "source": source,
+        "source_url": url,
+        "price_source": price_source or "not_available",
+        "specs_source": "product_page" if checks["specs_present"] else "not_available",
     }
     record["metadata"] = metadata
     return record
