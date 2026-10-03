@@ -278,6 +278,7 @@ SOURCE_GROUPS = {
     "Laptop": {"electronics"},
     "Electronics": {"electronics"},
     "Appliance": {"home", "electronics"},
+    "Fashion": {"fashion"},
     "Other": {"general", "electronics", "home", "fashion", "grocery"},
 }
 
@@ -714,7 +715,7 @@ def _search_engine_candidates(source, config, query):
     host = config["base"].split("//", 1)[-1].replace("www.", "")
     search_queries = [
         f"site:{host} {query} Pakistan price",
-        f"site:{host} smartphone PKR",
+        f"site:{host} {query}",
     ]
     candidates = []
     seen = set()
@@ -992,9 +993,17 @@ def search_web(query, category=""):
     # Pass 1: the six highest-priority Pakistani shopping sources.
     results = run_pass(eligible(PRIMARY_PK_SOURCES), workers=6)
 
-    # If the primary pass produced too few products, broaden to other
-    # Pakistani stores before touching international marketplaces.
-    if len(results) < 8:
+    def relevant_count(items):
+        return sum(
+            1 for item in items
+            if _is_relevant_record(item, category, query)
+            and bool(item.get("metadata", {}).get("verification", {}).get("price_verified"))
+        )
+
+    # Broaden based on genuinely relevant, price-verified products rather
+    # than raw records. Raw retailer records can include unrelated products
+    # that would later be filtered out.
+    if relevant_count(results) < 8:
         secondary = [
             item for item in eligible(SECONDARY_PK_SOURCES)
             if item[0] not in {str(r.get("source", "")) for r in results}
@@ -1003,7 +1012,7 @@ def search_web(query, category=""):
 
     # International sources are a final fallback. They are useful, but
     # querying them on every Pakistan shopping request adds latency.
-    if len(results) < 8:
+    if relevant_count(results) < 8:
         international = eligible(INTERNATIONAL_SOURCES)
         results.extend(run_pass(international, workers=2))
 
