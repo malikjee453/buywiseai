@@ -128,6 +128,34 @@ def _record_from_context(context, source, url):
         },
     }
 
+CATEGORY_TERMS = {
+    "smartphone": ("phone", "smartphone", "mobile", "iphone", "galaxy", "redmi", "vivo", "oppo", "tecno", "infinix", "xiaomi", "realme", "motorola", "honor", "oneplus", "pixel", "itel", "nokia", "dcode", "sparx", "xmobile"),
+    "laptop": ("laptop", "notebook", "macbook", "thinkpad", "ideapad", "vivobook", "pavilion"),
+    "electronics": ("phone", "mobile", "laptop", "tablet", "headphone", "earbuds", "watch", "camera", "tv", "monitor", "keyboard", "mouse", "speaker", "console"),
+    "appliance": ("fridge", "refrigerator", "washing machine", "microwave", "oven", "air conditioner", "air fryer", "blender", "appliance"),
+    "fashion": ("shirt", "dress", "kurta", "lawn", "abaya", "shoe", "sandal", "clothing", "fashion"),
+    "grocery": ("grocery", "rice", "milk", "oil", "atta", "flour", "snack", "food"),
+}
+
+SOURCE_GROUPS = {
+    "Smartphone": {"electronics"},
+    "Laptop": {"electronics"},
+    "Electronics": {"electronics"},
+    "Appliance": {"home", "electronics"},
+    "Other": {"general", "electronics", "home", "fashion", "grocery"},
+}
+
+def _is_relevant_record(record, category="", query=""):
+    text = " ".join([
+        str(record.get("metadata", {}).get("title", "")),
+        str(record.get("text", "")),
+    ]).lower()
+    terms = CATEGORY_TERMS.get(str(category or "").strip().lower())
+    if not terms:
+        group = _query_group(query)
+        terms = CATEGORY_TERMS.get(group)
+    return not terms or any(term in text for term in terms)
+
 class _LinkParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -306,13 +334,16 @@ def _search_source_with_fallback(source, config, query, budget, group):
         filtered.append(record)
     return filtered[:6]
 
-def search_web(query):
+def search_web(query, category=""):
     """Search supported shopping sources and return only retrieved live evidence."""
     budget = _budget_from_query(query)
     group = _query_group(query)
+    allowed_groups = SOURCE_GROUPS.get(str(category or "").strip().title())
+    if not allowed_groups:
+        allowed_groups = {group}
     selected = [
         (name, cfg) for name, cfg in SOURCE_CATALOG.items()
-        if group in cfg["groups"]
+        if cfg["groups"] & allowed_groups
     ]
 
     results = []
@@ -328,6 +359,8 @@ def search_web(query):
     unique = []
     seen = set()
     for item in results:
+        if not _is_relevant_record(item, category, query):
+            continue
         key = (
             item.get("source"),
             item.get("metadata", {}).get("url"),
@@ -338,4 +371,16 @@ def search_web(query):
             continue
         seen.add(key)
         unique.append(item)
-    return unique[:40]
+
+    # Keep the evidence set balanced across marketplaces.
+    balanced = []
+    counts = {}
+    for item in unique:
+        source = item.get("source", "Unknown")
+        if counts.get(source, 0) >= 4:
+            continue
+        counts[source] = counts.get(source, 0) + 1
+        balanced.append(item)
+        if len(balanced) >= 24:
+            break
+    return balanced
