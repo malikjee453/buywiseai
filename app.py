@@ -2,28 +2,28 @@ import streamlit as st
 from urllib.parse import urlsplit
 
 from buywise.llm import LLMConfigurationError, get_llm
-from buywise.categories import SHOPPING_CATEGORIES
 from buywise.providers import run_search
-from buywise.providers.platforms import PLATFORMS, platform_count
 from buywise.schemas import ProductQuery
 
 
 st.set_page_config(page_title="BuyWiseAI", page_icon="🛒", layout="wide")
 
 st.title("🛒 BuyWiseAI")
-st.caption("Multi-agent product search and price comparison — Stage 2")
-st.caption("Build: 10 different shopping websites target")
+st.caption("Find the best products and prices across Pakistan shopping websites.")
 
 st.markdown(
     """
-    ### Real product search
-    Search multiple discovery providers and targeted shopping websites.
-    BuyWiseAI returns **one verified product per shopping website** rather than
-    ten products from the same store.
+    ### What are you looking for?
+    Search for any product — electronics, fashion, home, beauty, sports,
+    groceries, baby products, automotive, tools, and more.
     """
 )
 
-query = st.text_input("Product query", "iPhone 15 128GB")
+query = st.text_input(
+    "Product query",
+    "iPhone 15 128GB",
+    label_visibility="collapsed",
+)
 
 currency = st.selectbox(
     "Display currency",
@@ -31,31 +31,11 @@ currency = st.selectbox(
 )
 
 max_results = st.slider(
-    "Maximum total results",
+    "Maximum results",
     5,
     10,
     10,
 )
-
-with st.expander("Search provider status"):
-    st.write(
-        "Serper.dev, SerpAPI, Tavily, Brave Search, plus targeted "
-        "shopping-platform discovery."
-    )
-    st.caption(
-        "Paid providers are used only when their API key is configured. "
-        "Targeted platform discovery uses free search backends."
-    )
-
-with st.expander("Shopping categories in BuyWiseAI"):
-    for department, subcategories in SHOPPING_CATEGORIES.items():
-        st.markdown(f"**{department}**")
-        st.write(", ".join(subcategories.keys()))
-
-with st.expander(f"Shopping platforms in BuyWiseAI ({platform_count()})"):
-    for category, platforms in PLATFORMS.items():
-        st.markdown(f"**{category.replace('_', ' ').title()}**")
-        st.write(", ".join(platforms.keys()))
 
 if st.button("🔎 Search products", type="primary"):
     if not query.strip():
@@ -70,8 +50,8 @@ if st.button("🔎 Search products", type="primary"):
             )
 
             with st.status(
-                "Searching multiple providers and shopping websites...",
-                expanded=True,
+                "Searching shopping websites...",
+                expanded=False,
             ) as status:
                 raw_results, listings, errors = run_search(
                     parsed.normalized_query,
@@ -79,22 +59,14 @@ if st.button("🔎 Search products", type="primary"):
                     max_results=max_results,
                 )
                 status.update(
-                    label=f"Search complete — {len(listings)} unique shopping sources",
+                    label=f"Search complete — {len(listings)} priced results",
                     state="complete",
                 )
 
-            if errors:
-                # Only real provider failures are shown. Empty DDG results are
-                # intentionally handled as normal empty discovery.
-                with st.expander(f"Provider issues ({len(errors)})"):
-                    for error in errors:
-                        st.warning(error)
-
             if not listings:
                 st.warning(
-                    "No verified priced product results were found. "
-                    "Try a more specific product query or configure "
-                    "SERPER_API_KEY / another search provider in Streamlit Secrets."
+                    "No priced product results were found. "
+                    "Try a more specific product query."
                 )
             else:
                 distinct_sources = len({
@@ -110,8 +82,8 @@ if st.button("🔎 Search products", type="primary"):
                 if len(listings) < 10 or distinct_sources < 8:
                     st.info(
                         "Coverage is below the target of 10 products from "
-                        "8+ distinct shopping websites. BuyWiseAI will never "
-                        "duplicate a store or invent a price to fill the table."
+                        "8+ different shopping websites. BuyWiseAI will "
+                        "never duplicate a store or invent a price."
                     )
                 else:
                     st.success(
@@ -140,15 +112,12 @@ if st.button("🔎 Search products", type="primary"):
                     },
                 )
 
-                with st.expander("Raw provider results"):
-                    st.write(f"Raw discovery results received: {len(raw_results)}")
-                    st.json([item.model_dump() for item in raw_results[:100]])
-
         except Exception as exc:
             st.error(f"Search failed: {type(exc).__name__}: {exc}")
 
+# Keep Groq initialization available for the next AI recommendation stage,
+# but do not expose configuration/status details in the public interface.
 try:
     get_llm()
-    st.success("Groq configuration detected. The LLM wrapper is ready.")
-except LLMConfigurationError as exc:
-    st.info(f"LLM note: {exc}")
+except LLMConfigurationError:
+    pass
