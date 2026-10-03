@@ -76,9 +76,23 @@ def verify_evidence(query, structured, evidence):
     result.setdefault("gaps", [])
     result.setdefault("notes", [])
 
-    result["notes"] = list(dict.fromkeys(result["notes"] + local_notes))
-    result["conflicts"] = list(dict.fromkeys(result["conflicts"] + local_conflicts))
-    result["gaps"] = list(dict.fromkeys(result["gaps"] + local_gaps))
+    def _clean_messages(values):
+        cleaned = []
+        seen = set()
+        if not isinstance(values, list):
+            values = [values]
+        for value in values:
+            if isinstance(value, dict):
+                value = value.get("message") or value.get("text") or json.dumps(value, ensure_ascii=False)
+            value = str(value).strip()
+            if value and value not in seen:
+                seen.add(value)
+                cleaned.append(value)
+        return cleaned
+
+    result["notes"] = _clean_messages(result["notes"] + local_notes)
+    result["conflicts"] = _clean_messages(result["conflicts"] + local_conflicts)
+    result["gaps"] = _clean_messages(result["gaps"] + local_gaps)
 
     if result["conflicts"]:
         result["status"] = "conflicting"
