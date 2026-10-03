@@ -44,9 +44,12 @@ Strict grounding rules:
   traceable to the supplied evidence; do not add general shopping knowledge.
 - Preserve supplied prices exactly; never estimate or convert them.
 - Treat prices and availability as time-sensitive.
-- Requirement-fit statements must use neutral wording such as "Within the stated
-  budget" or "Battery capacity is 6000 mAh". Do not claim that a product has a
-  "good camera" or "good battery" unless the source explicitly makes that claim.
+- Requirement-fit statements must use only directly supported facts, such as
+  "Within the stated budget" or "Battery capacity is 6000 mAh".
+- Never say that a battery capacity "supports longer usage", "indicates better
+  endurance", or similar. Capacity alone does not establish real-world battery life.
+- Never say that a camera resolution indicates better image quality. Report the
+  supplied megapixel value without inferring camera quality.
 - Include evidence_status as "supported", "partial", or "insufficient".
 - Return only JSON. No explanation outside the JSON.
 
@@ -79,5 +82,6 @@ comparison data. Do not add facts from general model knowledge.
 Do not invent or upgrade claims. Never turn numeric specifications into
 subjective quality judgments. Never rank, sort, or select a winner. Do not call one product "best", "stronger",
 "better", "highest", or a "recommendation". If evidence is missing, say it is not established.
-Keep price and availability claims tied to supplied sources.
+Keep every factual claim tied to supplied sources. Do not infer real-world
+performance from specifications.
 """
