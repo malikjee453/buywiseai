@@ -56,7 +56,9 @@ def parse_price(
     snippet: str = "",
     title: str = "",
 ) -> tuple[float, str] | None:
-    text = " ".join(x for x in [price_text or "", snippet or "", title or ""] if x)
+    # Prefer explicit provider price fields. Fall back to snippet only when
+    # necessary; never extract a random number from a product title.
+    text = " ".join(x for x in [price_text or "", snippet or ""] if x)
     match = PRICE_RE.search(text)
     if not match:
         return None
