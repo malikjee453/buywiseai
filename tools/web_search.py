@@ -407,19 +407,77 @@ def _jsonld_product_records(html, source, page_url):
 
 
 def _price_contexts(html, source, page_url, limit=12):
+    """Extract product prices while rejecting installment/monthly-payment noise."""
     parser = _TextParser()
     parser.feed(html)
     text = _clean(" ".join(parser.parts))
-    results = []
-    for match in re.finditer(r"(?:Rs\.?|PKR|\$)\s*[0-9][0-9,]*(?:\.\d+)?", text, re.I):
-        context = text[max(0, match.start()-220):min(len(text), match.end()+260)]
+    matches = []
+
+    for match in re.finditer(
+        r"(?:Rs\\.?|PKR|\\$)\\s*[0-9][0-9,]*(?:\\.\\d+)?",
+        text,
+        re.I,
+    ):
+        value = _money(match.group(0))
+        if not value:
+            continue
+
+        context = text[max(0, match.start()-320):min(len(text), match.end()+420)]
         if not PRODUCT_WORDS.search(context):
             continue
+
+        window = context.lower()
+        score = 0
+
+        # Real product-price labels are strong signals.
+        for token in (
+            "latest price", "current price", "our price", "sale price",
+            "price in pakistan", "price:", "price ", "buy now",
+        ):
+            if token in window:
+                score += 4
+
+        # Payment-plan amounts are not the product price.
+        for token in (
+            "per month", "/month", "monthly", "installment", "installments",
+            "emi", "down payment", "advance payment", "deposit",
+        ):
+            if token in window:
+                score -= 12
+
+        # Prefer prices that appear close to an explicit price label.
+        label_match = re.search(
+            r"(?:latest|current|our|sale)?\\s*price(?:\\s+in\\s+pakistan)?\\s*[:\\-]?\\s*(?:rs\\.?|pkr)?\\s*[0-9]",
+            window,
+            re.I,
+        )
+        if label_match:
+            score += 8
+
+        # A product price in this app's shopping domain should not be an
+        # implausibly tiny payment amount. Keep legitimate low-cost phones,
+        # but strongly deprioritize sub-PKR-10k values when better candidates
+        # exist on the same page.
+        if value < 10000:
+            score -= 2
+
+        matches.append((score, value, match))
+
+    matches.sort(key=lambda item: (-item[0], item[1]))
+
+    results = []
+    seen_prices = set()
+    for _, value, match in matches:
+        if value in seen_prices:
+            continue
+        context = text[max(0, match.start()-320):min(len(text), match.end()+420)]
         record = _record_from_context(context, source, page_url)
         if record:
             results.append(record)
+            seen_prices.add(value)
         if len(results) >= limit:
             break
+
     return results
 
 def _listing_records_from_links(html, source, page_url, budget=None, limit=6):
@@ -700,11 +758,13 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
     }
 
     # Search indexes are a second discovery path when retailer HTML is
-    # JavaScript-heavy or hides product links.
-    if len(discovered) < limit:
+    # JavaScript-heavy or hides product links. Trigger this based on usable
+    # catalog records, not raw URL count: a page can expose many URLs while
+    # none of their detail pages are fetchable or within the user's budget.
+    if len(catalog_records) < limit:
         for product_url, anchor in _search_engine_candidates(source, config, query):
             add_url(product_url, anchor)
-            if len(discovered) >= limit * 3:
+            if len(discovered) >= limit * 4:
                 break
 
     def verify_detail(item):
@@ -741,7 +801,7 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
 
     results = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(verify_detail, item) for item in prioritized[:limit * 2]]
+        futures = [pool.submit(verify_detail, item) for item in prioritized[:limit * 4]]
         for future in as_completed(futures):
             results.extend(future.result())
             if len(results) >= limit:
