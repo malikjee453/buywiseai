@@ -267,7 +267,7 @@ def _jsonld_product_records(html, source, page_url):
     seen = set()
 
     scripts = re.findall(
-        r'<script[^>]+type=["\']application/ld\\+json["\'][^>]*>(.*?)</script>',
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
         html,
         re.I | re.S,
     )
