@@ -31,7 +31,9 @@ class MarketplaceProvider(SearchProvider):
         with DDGS(timeout=15) as ddgs:
             items = ddgs.text(
                 search_query,
+                region="pk-en",
                 max_results=max(2, min(max_results, 4)),
+                backend="google,bing,duckduckgo",
             )
 
         return [
@@ -56,7 +58,7 @@ class MarketplaceProvider(SearchProvider):
         results: list[RawSearchResult] = []
 
         with ThreadPoolExecutor(
-            max_workers=min(8, len(platforms)),
+            max_workers=min(4, len(platforms)),
             thread_name_prefix="buywise-platform",
         ) as pool:
             futures = {
