@@ -592,11 +592,78 @@ def _search_engine_candidates(source, config, query):
 
     return candidates
 
+def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
+    """Use retailer catalog pages as a second discovery path.
+
+    This is intentionally separate from generic scraping because some
+    Pakistani retailers expose product cards in server-rendered catalog HTML
+    even when their search endpoint is JavaScript-heavy.
+    """
+    if source not in {"Mega.pk", "Daraz Pakistan"}:
+        return []
+
+    listing_url = config["search"]
+    if source == "Daraz Pakistan":
+        listing_url = "https://www.daraz.pk/tag/moblie-phone-infinix/"
+    try:
+        html = _fetch(listing_url, timeout=5)
+    except Exception:
+        return []
+
+    parser = _LinkParser()
+    parser.feed(html)
+    candidates = []
+    seen = set()
+
+    for href, anchor in parser.links:
+        absolute = urljoin(listing_url, href)
+        if absolute in seen or not _is_product_url(source, absolute):
+            continue
+        anchor = _clean(anchor)
+        if not anchor or not PRODUCT_WORDS.search(anchor + " " + absolute):
+            continue
+
+        # Daraz tag/catalog pages can contain several variants of the same
+        # product. Prefer the canonical product URL without tracking params.
+        canonical = absolute.split("?", 1)[0]
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+
+        # Nearby page text often contains the exact current PKR price.
+        position = html.find(href)
+        if position < 0:
+            position = html.find(canonical)
+        context = anchor
+        if position >= 0:
+            context += " " + html[max(0, position - 350):position + 1400]
+
+        record = _record_from_context(context, source, canonical)
+        if record:
+            price = _money(record.get("price"))
+            if budget and price and price > budget:
+                continue
+            record["metadata"]["title"] = anchor[:120]
+            candidates.append(record)
+            if len(candidates) >= limit:
+                break
+
+    return candidates
+
+
 def _search_source_with_fallback(source, config, query, budget, group):
     # First use the retailer's own search page. Some retailers expose only a
     # small subset or use client-side rendering, so supplement (rather than
     # replace) those results with indexed product pages.
     results = _search_source(source, config, query, budget, group)
+
+    # Dedicated catalog discovery for retailers where the public search
+    # endpoint is unreliable. These records still go through normal
+    # validation, URL checks, and budget filtering.
+    if len(results) < 3 and source in {"Mega.pk", "Daraz Pakistan"}:
+        results.extend(_dedicated_catalog_candidates(
+            source, config, query, budget, limit=6 - len(results)
+        ))
 
     if not results:
         # A listing page may expose Product JSON-LD even when its visible HTML
