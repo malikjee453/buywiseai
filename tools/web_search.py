@@ -280,11 +280,13 @@ def _jsonld_product_records(html, source, page_url):
             if isinstance(graph, list):
                 for item in graph:
                     yield from walk(item)
-            for key in ("itemListElement", "items"):
+            for key in ("itemListElement", "items", "item", "mainEntity", "mainEntityOfPage"):
                 items = value.get(key)
                 if isinstance(items, list):
                     for item in items:
                         yield from walk(item)
+                elif isinstance(items, dict):
+                    yield from walk(items)
         elif isinstance(value, list):
             for item in value:
                 yield from walk(item)
