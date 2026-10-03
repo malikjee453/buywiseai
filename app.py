@@ -18,12 +18,12 @@ st.markdown(
 )
 
 query = st.text_input(
-    "Product query",
+    "🔍 Search for a product",
     "iPhone 15 128GB",
-    label_visibility="collapsed",
+    placeholder="🔍 Type any product you want to compare...",
 )
 
-if st.button("🔎 Search products", type="primary"):
+if st.button("🔍 Search products", type="primary", use_container_width=False):
     if not query.strip():
         st.error("Enter a product query.")
     else:
