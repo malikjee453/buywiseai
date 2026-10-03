@@ -376,7 +376,7 @@ def _search_source(source, config, query, budget, group):
     try:
         q = quote_plus(query)
         url = config["search"].format(q=q)
-        html = _fetch(url)
+        html = _fetch(url, timeout=5)
 
         link_parser = _LinkParser()
         link_parser.feed(html)
@@ -398,9 +398,9 @@ def _search_source(source, config, query, budget, group):
         results = _jsonld_product_records(html, source, url)
         # Try more candidates because some retailer pages contain accessories
         # before the actual smartphone products.
-        for product_url, anchor in candidates[:30]:
+        for product_url, anchor in candidates[:8]:
             try:
-                detail_html = _fetch(product_url, timeout=6)
+                detail_html = _fetch(product_url, timeout=4)
 
                 # Parse the entire product page for specifications. Price snippets
                 # are intentionally short, but specs such as battery/camera often
@@ -418,7 +418,7 @@ def _search_source(source, config, query, budget, group):
                     results.extend(detail)
             except Exception:
                 continue
-            if len(results) >= 12:
+            if len(results) >= 6:
                 break
 
         # Never turn a retailer's search/category page into a product record.
@@ -430,7 +430,7 @@ def _search_source(source, config, query, budget, group):
                 if price and price > budget:
                     continue
             filtered.append(record)
-        return filtered[:12]
+        return filtered[:8]
     except Exception:
         return []
 
@@ -448,9 +448,8 @@ def _search_engine_candidates(source, config, query):
     for engine in (
         "https://www.google.com/search?q=",
         "https://www.bing.com/search?q=",
-        "https://html.duckduckgo.com/html/?q=",
     ):
-        for search_query in search_queries:
+        for search_query in search_queries[:1]:
             try:
                 html = _fetch(engine + quote_plus(search_query), timeout=8)
                 parser = _LinkParser()
@@ -489,12 +488,12 @@ def _search_source_with_fallback(source, config, query, budget, group):
     # replace) those results with indexed product pages.
     results = _search_source(source, config, query, budget, group)
 
-    if len(results) < 12:
+    if not results:
         # A listing page may expose Product JSON-LD even when its visible HTML
         # links are JavaScript-rendered or its detail pages block automated fetches.
         try:
             listing_url = config["search"].format(q=quote_plus(query))
-            listing_html = _fetch(listing_url, timeout=8)
+            listing_html = _fetch(listing_url, timeout=5)
             for record in _jsonld_product_records(listing_html, source, listing_url):
                 product_url = record["metadata"]["url"]
                 if product_url not in {
@@ -518,12 +517,12 @@ def _search_source_with_fallback(source, config, query, budget, group):
         for item in results
     }
 
-    for product_url, anchor in _search_engine_candidates(source, config, query):
+    for product_url, anchor in _search_engine_candidates(source, config, query)[:5]:
         if product_url in existing_urls:
             continue
 
         try:
-            detail_html = _fetch(product_url, timeout=7)
+            detail_html = _fetch(product_url, timeout=4)
 
             detail_parser = _TextParser()
             detail_parser.feed(detail_html)
@@ -571,7 +570,7 @@ def search_web(query, category=""):
     results = []
     # Give smaller retailers a chance to return evidence even when one
     # large retailer is slow or blocks automated fetches.
-    with ThreadPoolExecutor(max_workers=10) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         futures = {
             pool.submit(_search_source_with_fallback, name, cfg, query, budget, group): name
             for name, cfg in selected
@@ -602,12 +601,12 @@ def search_web(query, category=""):
         by_source.setdefault(item.get("source", "Unknown"), []).append(item)
 
     balanced = []
-    max_per_source = 4
+    max_per_source = 3
     for round_index in range(max_per_source):
         for source, source_items in by_source.items():
             if round_index < len(source_items):
                 balanced.append(source_items[round_index])
-                if len(balanced) >= 30:
+                if len(balanced) >= 18:
                     return [validate_record(item) for item in balanced]
 
     return balanced
