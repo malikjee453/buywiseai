@@ -43,7 +43,7 @@ if result:
     st.markdown("## Research Result")
     comparison = result.get("comparison", [])
     if comparison:
-        render_comparison_table(comparison)
+        render_comparison_table(comparison, category=result.get("category", category))
     else:
         st.info("No matching products were found in the available evidence.")
 
