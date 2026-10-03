@@ -6,7 +6,7 @@ from ddgs import DDGS
 
 from buywise.schemas import RawSearchResult
 from .base import SearchProvider
-from .platforms import all_platforms
+from .platforms import relevant_platforms
 
 
 class MarketplaceProvider(SearchProvider):
@@ -28,12 +28,11 @@ class MarketplaceProvider(SearchProvider):
         # page title contains the product terms.
         search_query = f'site:{domain} {query} Pakistan'
 
-        with DDGS(timeout=15) as ddgs:
+        with DDGS(timeout=8) as ddgs:
             items = ddgs.text(
                 search_query,
                 region="pk-en",
                 max_results=max(2, min(max_results, 4)),
-                backend="google,bing,duckduckgo",
             )
 
         return [
@@ -54,11 +53,11 @@ class MarketplaceProvider(SearchProvider):
         country: str,
         max_results: int,
     ) -> list[RawSearchResult]:
-        platforms = all_platforms()
+        platforms = relevant_platforms(query, max_platforms=10)
         results: list[RawSearchResult] = []
 
         with ThreadPoolExecutor(
-            max_workers=min(4, len(platforms)),
+            max_workers=min(10, len(platforms)),
             thread_name_prefix="buywise-platform",
         ) as pool:
             futures = {
