@@ -666,18 +666,14 @@ def _dedicated_catalog_candidates(source, config, query, budget, limit=6):
     return results[:limit]
 
 def _search_source_with_fallback(source, config, query, budget, group):
-    # First use the retailer's own search page. Some retailers expose only a
-    # small subset or use client-side rendering, so supplement (rather than
-    # replace) those results with indexed product pages.
-    results = _search_source(source, config, query, budget, group)
-
-    # Dedicated catalog discovery for retailers where the public search
-    # endpoint is unreliable. These records still go through normal
-    # validation, URL checks, and budget filtering.
-    if len(results) < 3 and source in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
-        results.extend(_dedicated_catalog_candidates(
-            source, config, query, budget, limit=6 - len(results)
-        ))
+    # These retailers need exact product-page discovery first. Their public
+    # category/search HTML is often incomplete or JavaScript-heavy.
+    if source in {"Daraz Pakistan", "Mega.pk", "Shophive", "iShopping"}:
+        results = _dedicated_catalog_candidates(source, config, query, budget, limit=6)
+        if len(results) < 3:
+            results.extend(_search_source(source, config, query, budget, group))
+    else:
+        results = _search_source(source, config, query, budget, group)
 
     if not results:
         # A listing page may expose Product JSON-LD even when its visible HTML
@@ -715,26 +711,17 @@ def _search_source_with_fallback(source, config, query, budget, group):
 
         try:
             detail_html = _fetch(product_url, timeout=4)
-
             detail_parser = _TextParser()
             detail_parser.feed(detail_html)
             detail_text = _clean(" ".join(detail_parser.parts))
-
             detail = _price_contexts(detail_html, source, product_url, limit=1)
             if detail:
                 detail[0]["metadata"]["title"] = anchor[:120]
                 detail[0]["text"] = detail_text[:1800]
                 _enrich_detail_metadata(detail[0], detail_text, source)
                 price = _money(detail[0].get("price"))
-
-                # A PKR budget can only be compared against a PKR price.
                 currency = detail[0].get("metadata", {}).get("currency")
-                if not (
-                    budget
-                    and currency == "PKR"
-                    and price
-                    and price > budget
-                ):
+                if not (budget and currency == "PKR" and price and price > budget):
                     results.extend(detail)
                     existing_urls.add(product_url)
         except Exception:
