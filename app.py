@@ -25,7 +25,7 @@ currency = st.selectbox(
     "Display currency",
     ["PKR", "USD", "GBP"],
 )
-max_results = st.slider("Results per provider", 5, 20, 10)
+max_results = st.slider("Maximum total results", 5, 10, 10)
 
 with st.expander("Search provider status"):
     st.write("Serper.dev, SerpAPI, Tavily, Brave Search, DuckDuckGo, plus targeted shopping-platform discovery.")
