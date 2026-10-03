@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from html.parser import HTMLParser
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import quote_plus, urljoin, unquote
 from urllib.request import Request, urlopen
 import re
 import json
@@ -17,7 +17,7 @@ SOURCE_CATALOG = {
     "PriceOye": {"base": "https://priceoye.pk", "search": "https://priceoye.pk/mobiles", "groups": {"electronics"}},
     "Telemart": {"base": "https://www.telemart.pk", "search": "https://www.telemart.pk/collections/smart-phones", "groups": {"electronics", "home", "general"}},
     "Shophive": {"base": "https://www.shophive.com", "search": "https://www.shophive.com/catalogsearch/result/?q={q}", "groups": {"electronics", "home", "general"}},
-    "Mega.pk": {"base": "https://www.mega.pk", "search": "https://www.mega.pk/search/{q}/", "groups": {"electronics"}},
+    "Mega.pk": {"base": "https://www.mega.pk", "search": "https://www.mega.pk/mobiles/", "groups": {"electronics"}},
     "iShopping": {"base": "https://www.ishopping.pk", "search": "https://www.ishopping.pk/mobiles", "groups": {"electronics"}},
     "HomeShopping": {"base": "https://www.homeshopping.pk", "search": "https://www.homeshopping.pk/mobiles", "groups": {"electronics", "home", "general"}},
     "Galaxy": {"base": "https://www.galaxy.pk", "search": "https://www.galaxy.pk/search?q={q}", "groups": {"electronics"}},
@@ -533,46 +533,59 @@ def _search_source(source, config, query, budget, group):
 
 
 def _search_engine_candidates(source, config, query):
-    """Discover indexed product pages when a retailer search page is JS/blocking."""
+    """Discover exact retailer product URLs from public search indexes.
+
+    Retailer search pages are frequently JavaScript-only. Search indexes still
+    expose the underlying product URLs, so URL discovery is deliberately kept
+    separate from retailer-page scraping.
+    """
     host = config["base"].split("//", 1)[-1].replace("www.", "")
     search_queries = [
-        f"site:{host} {query}",
-        f"site:{host} smartphone PKR battery camera",
+        f"site:{host} {query} Pakistan price",
+        f"site:{host} smartphone PKR",
     ]
     candidates = []
     seen = set()
+
+    def add_url(raw_url, anchor=""):
+        absolute = unquote(raw_url).replace("&amp;", "&").strip(" \t\r\n'\"<>(),")
+        if not absolute.startswith("http"):
+            return False
+        if host not in absolute.replace("www.", "").lower():
+            return False
+        if absolute in seen or not _is_product_url(source, absolute):
+            return False
+        seen.add(absolute)
+        candidates.append((absolute, _clean(anchor) or absolute.rsplit("/", 1)[-1]))
+        return True
 
     for engine in (
         "https://www.google.com/search?q=",
         "https://www.bing.com/search?q=",
     ):
-        for search_query in search_queries[:1]:
+        for search_query in search_queries:
             try:
-                html = _fetch(engine + quote_plus(search_query), timeout=5)
+                page = _fetch(engine + quote_plus(search_query) + "&num=10", timeout=5)
+
+                # First try parsed anchors.
                 parser = _LinkParser()
-                parser.feed(html)
-
+                parser.feed(page)
                 for href, anchor in parser.links:
-                    if not href or not anchor:
-                        continue
+                    href = unquote(href)
+                    if href.startswith("/url?q="):
+                        href = href.split("/url?q=", 1)[1].split("&", 1)[0]
+                    elif "url=" in href and href.startswith("/url?"):
+                        href = href.split("url=", 1)[1].split("&", 1)[0]
+                    add_url(href, anchor)
+                    if len(candidates) >= 12:
+                        return candidates
 
-                    absolute = href
-                    if absolute.startswith("/url?q="):
-                        absolute = absolute.split("/url?q=", 1)[1].split("&", 1)[0]
-
-                    if not absolute.startswith("http"):
-                        continue
-                    if host not in absolute.replace("www.", ""):
-                        continue
-                    if absolute in seen:
-                        continue
-                    if not _is_product_url(source, absolute):
-                        continue
-
-                    seen.add(absolute)
-                    candidates.append((absolute, anchor))
-
-                    if len(candidates) >= 30:
+                # Then scan the raw result HTML. This catches Google/Bing
+                # redirect formats that HTMLParser cannot interpret.
+                pattern = rf"https?://(?:www\.)?{re.escape(host)}[^\\s\"'<>]+"
+                for raw in re.findall(pattern, page, re.I):
+                    add_url(raw)
+                    if len(candidates) >= 12:
                         return candidates
             except Exception:
                 continue
