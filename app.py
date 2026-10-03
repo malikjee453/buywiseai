@@ -2,6 +2,7 @@ import streamlit as st
 
 from buywise.llm import LLMConfigurationError, get_llm
 from buywise.providers import run_search
+from buywise.providers.platforms import PLATFORMS, platform_count
 from buywise.schemas import ProductQuery
 
 
@@ -26,11 +27,16 @@ currency = st.selectbox(
 max_results = st.slider("Results per provider", 5, 20, 10)
 
 with st.expander("Search provider status"):
-    st.write("Serper.dev, SerpAPI, Tavily, Brave Search, and DuckDuckGo")
+    st.write("Serper.dev, SerpAPI, Tavily, Brave Search, DuckDuckGo, plus targeted shopping-platform discovery.")
     st.caption(
         "Paid providers are used only when their API key is configured. "
-        "DuckDuckGo does not require a key."
+        "DuckDuckGo and targeted platform discovery do not require a key."
     )
+
+with st.expander(f"Shopping platforms in BuyWiseAI ({platform_count()})"):
+    for category, platforms in PLATFORMS.items():
+        st.markdown(f"**{category.replace(\"_\", \" \").title()}**")
+        st.write(", ".join(platforms.keys()))
 
 if st.button("🔎 Search products", type="primary"):
     if not query.strip():
