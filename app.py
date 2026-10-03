@@ -23,8 +23,6 @@ query = st.text_input(
     label_visibility="collapsed",
 )
 
-# Pakistan is the fixed market for BuyWiseAI.
-# The app searches for a maximum of 10 final verified products.
 if st.button("🔎 Search products", type="primary"):
     if not query.strip():
         st.error("Enter a product query.")
@@ -37,7 +35,7 @@ if st.button("🔎 Search products", type="primary"):
                 currency="PKR",
             )
 
-            raw_results, listings, errors = run_search(
+            _, listings, _ = run_search(
                 parsed.normalized_query,
                 parsed.country,
                 max_results=10,
@@ -45,14 +43,14 @@ if st.button("🔎 Search products", type="primary"):
 
             if not listings:
                 st.warning(
-                    "No priced product results were found. "
+                    "No verified PKR product results were found. "
                     "Try a more specific product query."
                 )
             else:
                 rows = [
                     {
                         "Product": item.title,
-                        "Price": f"{item.currency} {item.price:,.2f}",
+                        "Price": f"PKR {item.price:,.2f}",
                         "Shopping website": item.source,
                         "Product page": str(item.url),
                     }
@@ -64,9 +62,7 @@ if st.button("🔎 Search products", type="primary"):
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        "Product page": st.column_config.LinkColumn(
-                            "Product page"
-                        ),
+                        "Product page": st.column_config.LinkColumn("Product page")
                     },
                 )
 
