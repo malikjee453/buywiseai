@@ -1,6 +1,6 @@
 app:
   name: BuyWiseAI
-  version: "0.2.0"
+  version: "0.2.1"
   default_country: Pakistan
   default_currency: PKR
   cache_ttl_seconds: 1800
@@ -24,6 +24,7 @@ search:
     - tavily
     - brave
     - duckduckgo
+    - marketplace_targeted
 
 marketplaces:
   - amazon
@@ -35,6 +36,11 @@ marketplaces:
   - target
   - newegg
   - flipkart
+
+  # Explicitly targeted in Stage 2
+  priority:
+    - daraz
+    - aliexpress
 
 logging:
   level: INFO
