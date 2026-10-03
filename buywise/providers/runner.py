@@ -6,7 +6,7 @@ from buywise.schemas import ProductListing, RawSearchResult
 from buywise.categories import detect_categories
 from .base import SearchProvider
 from .brave import BraveProvider
-from .common import is_relevant_product, normalize_url, raw_to_listing
+from .common import infer_source, is_relevant_product, normalize_url, raw_to_listing
 from .ddg import DuckDuckGoProvider
 from .marketplace import MarketplaceProvider
 from .serpapi import SerpApiProvider
@@ -60,7 +60,9 @@ def _build_listings(
             continue
 
         canonical_url = normalize_url(str(listing.url))
-        source = listing.source.strip().lower()
+        # Canonicalize the merchant by its product URL so "PriceOye",
+        # "priceoye.pk", etc. cannot become separate sources.
+        source = infer_source(canonical_url, listing.source).lower()
 
         if not canonical_url or canonical_url in seen_urls:
             continue
@@ -95,6 +97,10 @@ def _build_listings(
             seen_urls.add(canonical_url)
             source_counts[source] = source_counts.get(source, 0) + 1
             listings.append(listing)
+
+            # The final table is globally capped at 10 products.
+            if len(listings) >= TARGET_RESULTS:
+                return listings
 
     return listings
 
