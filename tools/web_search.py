@@ -3,6 +3,7 @@ from html.parser import HTMLParser
 from urllib.parse import quote_plus, urljoin
 from urllib.request import Request, urlopen
 import re
+import json
 
 # Supported shopping sources. A source is only returned when BuyWise can
 # actually retrieve a product/listing record from it; no URL or product is invented.
@@ -260,6 +261,87 @@ class _TextParser(HTMLParser):
         if text:
             self.parts.append(text)
 
+def _jsonld_product_records(html, source, page_url):
+    """Extract Product/Offer records embedded in retailer HTML."""
+    results = []
+    seen = set()
+
+    scripts = re.findall(
+        r'<script[^>]+type=["\']application/ld\\+json["\'][^>]*>(.*?)</script>',
+        html,
+        re.I | re.S,
+    )
+
+    def walk(value):
+        if isinstance(value, dict):
+            if str(value.get("@type", "")).lower() == "product":
+                yield value
+            graph = value.get("@graph")
+            if isinstance(graph, list):
+                for item in graph:
+                    yield from walk(item)
+            for key in ("itemListElement", "items"):
+                items = value.get(key)
+                if isinstance(items, list):
+                    for item in items:
+                        yield from walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from walk(item)
+
+    for raw in scripts:
+        try:
+            data = json.loads(raw.strip())
+        except Exception:
+            continue
+
+        for product in walk(data):
+            name = _clean(str(product.get("name", "")))
+            offers = product.get("offers", {})
+            if isinstance(offers, list):
+                offers = offers[0] if offers else {}
+            if not isinstance(offers, dict):
+                offers = {}
+
+            product_url = str(
+                product.get("url")
+                or offers.get("url")
+                or page_url
+            ).strip()
+            if not product_url.startswith("http"):
+                product_url = urljoin(page_url, product_url)
+
+            price = offers.get("price")
+            currency = str(offers.get("priceCurrency", "PKR")).upper()
+            if not name or not price or not _is_product_url(source, product_url):
+                continue
+
+            amount = _money(price)
+            if not amount or (currency == "PKR" and amount < 1000):
+                continue
+
+            key = (product_url, name, amount)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            results.append({
+                "text": name,
+                "source": source,
+                "source_type": "live_web",
+                "price": f"{currency} {amount:,}",
+                "metadata": {
+                    "title": name[:120],
+                    "country": "Pakistan" if currency == "PKR" else "international",
+                    "currency": currency,
+                    "url": product_url,
+                    "specs": {},
+                },
+            })
+
+    return results
+
+
 def _price_contexts(html, source, page_url, limit=12):
     parser = _TextParser()
     parser.feed(html)
@@ -299,10 +381,10 @@ def _search_source(source, config, query, budget, group):
             seen.add(absolute)
             candidates.append((absolute, anchor))
 
-        results = []
+        results = _jsonld_product_records(html, source, url)
         # Try more candidates because some retailer pages contain accessories
         # before the actual smartphone products.
-        for product_url, anchor in candidates[:20]:
+        for product_url, anchor in candidates[:30]:
             try:
                 detail_html = _fetch(product_url, timeout=6)
 
@@ -387,6 +469,27 @@ def _search_source_with_fallback(source, config, query, budget, group):
     # small subset or use client-side rendering, so supplement (rather than
     # replace) those results with indexed product pages.
     results = _search_source(source, config, query, budget, group)
+
+    if len(results) < 12:
+        # A listing page may expose Product JSON-LD even when its visible HTML
+        # links are JavaScript-rendered or its detail pages block automated fetches.
+        try:
+            listing_url = config["search"].format(q=quote_plus(query))
+            listing_html = _fetch(listing_url, timeout=8)
+            for record in _jsonld_product_records(listing_html, source, listing_url):
+                product_url = record["metadata"]["url"]
+                if product_url not in {
+                    str(item.get("metadata", {}).get("url", ""))
+                    for item in results
+                }:
+                    price = _money(record.get("price"))
+                    currency = record["metadata"].get("currency")
+                    if not (budget and currency == "PKR" and price and price > budget):
+                        results.append(record)
+                if len(results) >= 12:
+                    break
+        except Exception:
+            pass
 
     if len(results) >= 12:
         return results[:12]
